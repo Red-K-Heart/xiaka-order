@@ -295,6 +295,68 @@ function callGasApi(apiName, successCallback, errorCallback) {
   document.body.appendChild(script);
 }
 
+    
+// ============================================================
+// JSONP 送出訂單
+// GitHub Pages → GAS doGet()
+// ============================================================
+
+function submitOrderToGas(data, successCallback, errorCallback) {
+
+  const callbackName =
+    "gasOrderCallback_" +
+    Date.now() +
+    "_" +
+    Math.floor(Math.random() * 100000);
+
+  let script;
+
+  window[callbackName] = function(result) {
+
+    try {
+
+      if (typeof successCallback === "function") {
+        successCallback(result);
+      }
+
+    } finally {
+
+      delete window[callbackName];
+
+      if (script && script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+    }
+  };
+
+  script =
+    document.createElement("script");
+
+  script.src =
+    GAS_WEB_APP_URL +
+    "?api=submitOrder" +
+    "&callback=" +
+    encodeURIComponent(callbackName) +
+    "&data=" +
+    encodeURIComponent(
+      JSON.stringify(data)
+    );
+
+  script.onerror = function(error) {
+
+    delete window[callbackName];
+
+    if (script && script.parentNode) {
+      script.parentNode.removeChild(script);
+    }
+
+    if (typeof errorCallback === "function") {
+      errorCallback(error);
+    }
+  };
+
+  document.body.appendChild(script);
+}
 
     // ============================================================
     // 預設分類字典與順序
