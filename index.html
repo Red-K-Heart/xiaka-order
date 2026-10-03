@@ -14,6 +14,7 @@
   </style>
 </head>
 <body class="bg-amber-50 text-gray-800 antialiased pb-28 min-h-screen">
+   <iframe name="gasOrderFrame" id="gasOrderFrame" style="display:none;"></iframe>
 
   <header class="bg-amber-800 text-white shadow-md sticky top-0 z-50 overflow-hidden">
     <div class="w-full max-w-md mx-auto bg-amber-900 overflow-hidden">
@@ -1517,8 +1518,86 @@ function loadProductsFromGas() {
     }
 
 
-     // ============================================================
-      // 訂單送出：GAS 網頁版使用 google.script.run
+    // ============================================================
+    // 送出訂單
+    // ============================================================
+
+    function submitOrder() {
+
+      const name = document.getElementById('inputCustomerName').value.trim();
+      const phone = document.getElementById('inputCustomerPhone').value.trim();
+      const pickupTime = document.getElementById('selectPickupTime').value;
+
+      if (!name) {
+        alert('請填寫顧客姓名！');
+        return;
+      }
+
+      if (!phone || !validatePhoneNumber(phone)) {
+        alert('請填寫正確的電話號碼（手機或市話）！');
+        return;
+      }
+
+      if (!pickupTime) {
+        alert('請選擇預計取餐時間！');
+        return;
+      }
+
+      const orderItems = [];
+      let totalAmount = 0;
+
+      Object.keys(cart).forEach(id => {
+
+        const item = rawProducts.find(p => p.id === id);
+
+        if (item) {
+
+          const qty = cart[id];
+          const subtotal = item.price * qty;
+
+          totalAmount += subtotal;
+
+          orderItems.push({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            qty: qty,
+            subtotal: subtotal
+          });
+        }
+      });
+
+      if (orderItems.length === 0) {
+        alert('購物車內無商品！');
+        return;
+      }
+
+      const payload = {
+        lineUserId: liffUserId,
+        customerName: name,
+        customerPhone: phone,
+        pickupTimeSlot: pickupTime,
+        overallPepper: valOverallPepper,
+        overallChiliPowder: valOverallChiliPowder,
+        overallChiliSauce: document.getElementById('selectChiliSauce').value,
+        vegSeparate: document.getElementById('selectVegSeparate').value,
+        extraPepper: Number(document.getElementById('inputExtraPepper').value) || 0,
+        extraChili: Number(document.getElementById('inputExtraChili').value) || 0,
+        extraSauce: Number(document.getElementById('inputExtraSauce').value) || 0,
+        promoCode: document.getElementById('inputPromoCode').value.trim(),
+        remarks: document.getElementById('inputRemarks').value.trim(),
+        items: orderItems,
+        totalAmount: totalAmount
+      };
+
+      const btnSubmit = document.getElementById('btnSubmitOrder');
+
+      btnSubmit.disabled = true;
+      btnSubmit.innerText = '處理中...';
+
+
+      // ============================================================
+      // GAS 網頁版使用 google.script.run
       // GitHub Pages 使用 HTTP POST → GAS doPost()
       // ============================================================
 
@@ -1526,6 +1605,7 @@ function loadProductsFromGas() {
 
         google.script.run
           .withSuccessHandler(res => {
+
             alert('訂單已成功送出！感謝您的訂購。');
 
             if (typeof liff !== 'undefined' && liff.isInClient()) {
@@ -1538,11 +1618,14 @@ function loadProductsFromGas() {
               btnSubmit.disabled = false;
               btnSubmit.innerText = '確認送出';
             }
+
           })
           .withFailureHandler(err => {
+
             alert('送出失敗：' + (err.message || err));
             btnSubmit.disabled = false;
             btnSubmit.innerText = '確認送出';
+
           })
           .submitOrderData(payload);
 
@@ -1565,6 +1648,7 @@ function loadProductsFromGas() {
         form.submit();
         form.remove();
       }
+    }
   </script>
 </body>
 </html>
