@@ -627,195 +627,177 @@ function callGasApi(apiName, successCallback, errorCallback) {
 }
 
 
-    // ============================================================
-    // 載入商品 / 分類 / 設定
-    // ============================================================
+// ============================================================
+// 載入商品 / 分類 / 設定
+// ============================================================
 
-    function loadProductsAndRules() {
+function loadProductsAndRules() {
 
-      document.getElementById('loadingState').classList.remove('hidden');
-      document.getElementById('errorState').classList.add('hidden');
-      document.getElementById('productSections').classList.add('hidden');
+  document.getElementById('loadingState').classList.remove('hidden');
+  document.getElementById('errorState').classList.add('hidden');
+  document.getElementById('productSections').classList.add('hidden');
+
+
+  // ----------------------------------------------------------
+  // 1. 讀取店家設定
+  // ----------------------------------------------------------
+
+  callGasApi(
+
+    'storeSettings',
+
+    settings => {
+
+      if (settings) {
+
+        storeSettings = settings;
+
+        renderPickupTimeSlots();
+
+      }
+
+    },
+
+    error => {
+
+      console.error(
+        'getStoreSettings() 失敗：',
+        error
+      );
+
+      // 即使設定讀取失敗，也繼續讀取分類與商品
+      renderPickupTimeSlots();
+
+    }
+
+  );
+
+
+  // ----------------------------------------------------------
+  // 2. 讀取 CATALOG_RULES
+  // ----------------------------------------------------------
+
+  callGasApi(
+
+    'catalogRules',
+
+    rules => {
 
       if (
-        typeof google !== 'undefined' &&
-        google.script &&
-        google.script.run
+        rules &&
+        Array.isArray(rules) &&
+        rules.length > 0
       ) {
 
-        // --------------------------------------------------------
-        // 1. Settings
-        // --------------------------------------------------------
+        const dynamicMap = {};
+        const dynamicOrder = [];
 
-        google.script.run
 
-          .withSuccessHandler(settings => {
+        rules.forEach(r => {
 
-            if (settings) {
-              storeSettings = settings;
-              renderPickupTimeSlots();
+          const prefix = String(
+            r.Prefix ||
+            r['前綴代碼'] ||
+            r.Category_Prefix ||
+            ''
+          )
+            .trim()
+            .toUpperCase();
+
+
+          const name = String(
+            r.Category_Name ||
+            r['分類名稱'] ||
+            r.Name ||
+            ''
+          )
+            .trim();
+
+
+          if (prefix && name) {
+
+            dynamicMap[prefix] = name;
+
+
+            if (!dynamicOrder.includes(prefix)) {
+              dynamicOrder.push(prefix);
             }
 
-          })
+          }
 
-          .getStoreSettings();
-
-
-        // --------------------------------------------------------
-        // 2. CATALOG_RULES
-        // --------------------------------------------------------
-
-        google.script.run
-
-          .withSuccessHandler(rules => {
-
-            if (
-              rules &&
-              Array.isArray(rules) &&
-              rules.length > 0
-            ) {
-
-              const dynamicMap = {};
-              const dynamicOrder = [];
+        });
 
 
-              rules.forEach(r => {
+        if (Object.keys(dynamicMap).length > 0) {
 
-                const prefix = String(
-                  r.Prefix ||
-                  r['前綴代碼'] ||
-                  r.Category_Prefix ||
-                  ''
-                )
-                  .trim()
-                  .toUpperCase();
+          categoryMap = dynamicMap;
+          categoryOrder = dynamicOrder;
 
-
-                const name = String(
-                  r.Category_Name ||
-                  r['分類名稱'] ||
-                  r.Name ||
-                  ''
-                )
-                  .trim();
-
-
-                if (prefix && name) {
-
-                  dynamicMap[prefix] = name;
-
-                  if (!dynamicOrder.includes(prefix)) {
-                    dynamicOrder.push(prefix);
-                  }
-
-                }
-
-              });
-
-
-              if (Object.keys(dynamicMap).length > 0) {
-                categoryMap = dynamicMap;
-                categoryOrder = dynamicOrder;
-              }
-
-            } else {
-
-              console.warn(
-                'CATALOG_RULES 沒有取得有效資料，將使用預設 categoryMap'
-              );
-
-            }
-
-
-            // ----------------------------------------------------
-            // 3. Products
-            // ----------------------------------------------------
-
-            google.script.run
-
-              .withSuccessHandler(onProductsLoaded)
-
-              .withFailureHandler(onProductsLoadError)
-
-              .getProductsForFrontend();
-
-          })
-
-
-          .withFailureHandler(err => {
-
-            console.error(
-              'getCatalogRules() 失敗：',
-              err
-            );
-
-
-            google.script.run
-
-              .withSuccessHandler(onProductsLoaded)
-
-              .withFailureHandler(onProductsLoadError)
-
-              .getProductsForFrontend();
-
-          })
-
-
-          .getCatalogRules();
-
+        }
 
       } else {
 
-        // 本地模擬測試
+        console.warn(
+          'CATALOG_RULES 沒有取得有效資料，將使用預設 categoryMap'
+        );
 
-        setTimeout(() => {
-
-          renderPickupTimeSlots();
-
-          onProductsLoaded([
-
-            {
-              Product_ID: "O001",
-              Online_Name: "香脆雞軫 (半斤)",
-              Price: "$250"
-            },
-
-            {
-              Product_ID: "M001",
-              Online_Name: "香脂雞尾巴 (七里香) (半斤)",
-              Price: "$250"
-            },
-
-            {
-              Product_ID: "S003",
-              Online_Name: "【熱銷】煙燻千層豆包",
-              Price: "$30"
-            },
-
-            {
-              Product_ID: "P001",
-              Online_Name: "【經典】軟Q煙燻米血",
-              Price: "$25"
-            },
-
-            {
-              Product_ID: "V001",
-              Online_Name: "滷香海帶 (2條)",
-              Price: "$25"
-            },
-
-            {
-              Product_ID: "SF001",
-              Online_Name: "鮮彈刻花枝 (半斤)",
-              Price: "$250"
-            }
-
-          ]);
-
-        }, 600);
       }
+
+
+      // ------------------------------------------------------
+      // 3. 讀取 Products
+      // ------------------------------------------------------
+
+      loadProductsFromGas();
+
+    },
+
+    error => {
+
+      console.error(
+        'getCatalogRules() 失敗：',
+        error
+      );
+
+
+      // 分類規則失敗仍然繼續讀取商品
+      loadProductsFromGas();
+
     }
 
+  );
+}
+
+
+// ============================================================
+// 從 GAS 讀取 Products
+// ============================================================
+
+function loadProductsFromGas() {
+
+  callGasApi(
+
+    'products',
+
+    data => {
+
+      onProductsLoaded(data);
+
+    },
+
+    error => {
+
+      console.error(
+        'getProductsForFrontend() 失敗：',
+        error
+      );
+
+      onProductsLoadError(error);
+
+    }
+
+  );
+}
 
     // ============================================================
     // 取餐時間
