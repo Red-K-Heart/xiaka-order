@@ -1516,7 +1516,39 @@ function loadProductsFromGas() {
 
       }
     }
+// ============================================================
+// 接收 GAS 訂單送出結果
+// ============================================================
 
+window.addEventListener('message', event => {
+
+  if (!event.data || event.data.type !== 'XIAKA_ORDER_RESULT') return;
+
+  const result = event.data.result;
+  const btnSubmit = document.getElementById('btnSubmitOrder');
+
+  if (result && result.status === 'success') {
+
+    alert('訂單已成功送出！感謝您的訂購。');
+
+    if (typeof liff !== 'undefined' && liff.isInClient()) {
+      liff.closeWindow();
+    } else {
+      closeCheckoutModal();
+      cart = {};
+      renderProducts();
+      updateTotalSummary();
+      btnSubmit.disabled = false;
+      btnSubmit.innerText = '確認送出';
+    }
+
+  } else {
+
+    alert('送出失敗：' + (result?.message || '未知錯誤'));
+    btnSubmit.disabled = false;
+    btnSubmit.innerText = '確認送出';
+  }
+});
 
     // ============================================================
     // 送出訂單
