@@ -1,0 +1,1783 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>呷喀煙燻滷味 - 線上點餐系統</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    html { scroll-behavior: smooth; }
+  </style>
+</head>
+<body class="bg-amber-50 text-gray-800 antialiased pb-28 min-h-screen">
+
+  <header class="bg-amber-800 text-white shadow-md sticky top-0 z-50 overflow-hidden">
+    <div class="w-full max-w-md mx-auto bg-amber-900 overflow-hidden">
+      <img 
+        src="https://via.placeholder.com/800x300/78350f/fde68a?text=%E5%B2%B7%E5%90%83%E7%85%99%E7%87%BB%E6%BB%B7%E5%91%B3" 
+        alt="呷喀煙燻滷味 Banner" 
+        class="w-full h-auto max-h-48 object-cover block"
+        loading="lazy"
+      />
+    </div>
+
+    <div class="max-w-md mx-auto px-4 py-2.5 space-y-1 border-t border-amber-700/50">
+      <div class="flex justify-between items-center">
+        <div class="flex items-center space-x-2">
+          <span class="text-2xl">🍢</span>
+          <h1 class="text-2xl font-black tracking-wide text-amber-100">呷喀煙燻滷味</h1>
+        </div>
+        <span class="text-xs bg-amber-900 text-amber-200 px-2 py-1 rounded-full border border-amber-700 font-bold">美味現點現切</span>
+      </div>
+
+      <div class="flex items-center space-x-1.5 text-xs text-amber-200 font-medium pt-0.5">
+        <i class="fa-solid fa-location-dot text-amber-400"></i>
+        <span>新北市新莊區建國一路13號</span>
+      </div>
+    </div>
+
+    <nav id="categoryNav" class="bg-amber-900 overflow-x-auto whitespace-nowrap no-scrollbar py-2 px-3 border-t border-amber-700 flex space-x-2">
+      <div class="text-amber-300 text-sm py-1 font-bold">載入分類中...</div>
+    </nav>
+  </header>
+
+  <main class="max-w-md mx-auto px-3 pt-3">
+
+    <div id="loadingState" class="py-16 text-center space-y-3">
+      <i class="fa-solid fa-spinner fa-spin text-4xl text-amber-700"></i>
+      <p class="text-amber-900 font-bold">正從資料庫讀取最新菜單與營業設定...</p>
+    </div>
+
+    <div id="errorState" class="hidden py-10 text-center space-y-3 bg-red-50 rounded-2xl p-4 border border-red-200">
+      <i class="fa-solid fa-triangle-exclamation text-3xl text-red-500"></i>
+      <p id="errorMessage" class="text-red-700 font-bold">讀取菜單失敗</p>
+      <button onclick="loadProductsAndRules()" class="px-4 py-2 bg-red-600 text-white font-bold rounded-xl shadow hover:bg-red-700">重新載入</button>
+    </div>
+
+    <div id="productSections" class="space-y-6 hidden"></div>
+  </main>
+
+  <div class="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-amber-600 shadow-2xl z-40">
+    <div class="max-w-md mx-auto p-3 flex justify-between items-center">
+      <div class="flex flex-col">
+        <span class="text-sm text-gray-500 font-bold">已選 <span id="totalItemsCount" class="text-amber-700 text-lg">0</span> 件商品</span>
+        <div class="text-amber-900 text-2xl font-black">
+          合計：<span class="text-red-600">$<span id="totalPrice">0</span></span>
+        </div>
+      </div>
+      <button onclick="openCheckoutModal()" class="bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-extrabold text-xl px-6 py-3 rounded-2xl shadow-lg transition duration-150 flex items-center space-x-2">
+        <i class="fa-solid fa-basket-shopping text-xl"></i>
+        <span>確認結帳</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="checkoutModal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl max-h-[90vh] flex flex-col shadow-2xl border-2 border-amber-400 shadow-amber-900/10 overflow-hidden">
+      
+      <div class="bg-amber-800 text-white p-4 flex justify-between items-center">
+        <h3 class="text-xl font-bold flex items-center gap-2">
+          <i class="fa-solid fa-list-check"></i> 點餐單與個人資料設定
+        </h3>
+        <button onclick="closeCheckoutModal()" class="text-amber-200 hover:text-white text-2xl font-bold p-1">&times;</button>
+      </div>
+
+      <div class="p-4 overflow-y-auto flex-1 space-y-5 divide-y divide-gray-100">
+        
+        <div>
+          <h4 class="font-extrabold text-amber-950 mb-2 text-base flex items-center gap-1.5">
+            <i class="fa-solid fa-utensils text-amber-700"></i> 已選取品項
+          </h4>
+          <div id="cartItemsList" class="divide-y divide-gray-100"></div>
+        </div>
+
+        <div class="pt-4 space-y-3">
+          <h4 class="font-extrabold text-amber-950 text-base flex items-center gap-1.5">
+            <i class="fa-solid fa-user text-amber-700"></i> 訂購人資訊
+          </h4>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-1">顧客姓名 (Customer_Name) <span class="text-red-500">*</span></label>
+              <input type="text" id="inputCustomerName" placeholder="請輸入姓名" class="w-full border border-amber-300 rounded-xl p-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-1">電話號碼 (Customer_Phone) <span class="text-red-500">*</span></label>
+              <input type="tel" id="inputCustomerPhone" placeholder="09xxxxxxxx 或 02xxxxxxxx" class="w-full border border-amber-300 rounded-xl p-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none" oninput="validatePhoneRealtime()" />
+              <p id="phoneError" class="text-[10px] text-red-500 font-bold hidden mt-0.5">格式錯誤 (範例: 0222981234 或 0912345678)</p>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-gray-600 mb-1">預計取餐時間 (Pickup_Time_Slot) <span class="text-red-500">*</span></label>
+            <select id="selectPickupTime" class="w-full border border-amber-300 rounded-xl p-2 text-xs bg-white font-bold text-gray-700">
+              <option value="">載入取餐時段中...</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="pt-4 space-y-3">
+          <h4 class="font-extrabold text-amber-950 text-base flex items-center gap-1.5">
+            <i class="fa-solid fa-pepper-hot text-amber-700"></i> 調味設定 (口味偏好)
+          </h4>
+
+          <div>
+            <label class="block text-xs font-bold text-gray-600 mb-1">整單胡椒鹽 (Overall_Pepper)</label>
+            <div class="grid grid-cols-4 gap-1 text-center text-xs" id="groupPepper">
+              <button type="button" onclick="setSelectOpt('Pepper', '不加')" class="btn-pepper border rounded-lg py-1.5 font-bold border-gray-300 bg-white">不加</button>
+              <button type="button" onclick="setSelectOpt('Pepper', '小')" class="btn-pepper border rounded-lg py-1.5 font-bold border-gray-300 bg-white">少鹽</button>
+              <button type="button" onclick="setSelectOpt('Pepper', '正常')" class="btn-pepper border rounded-lg py-1.5 font-bold border-amber-500 bg-amber-100 text-amber-900">正常</button>
+              <button type="button" onclick="setSelectOpt('Pepper', '大')" class="btn-pepper border rounded-lg py-1.5 font-bold border-gray-300 bg-white">多鹽</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-gray-600 mb-1">整單辣椒粉 (Overall_Chili_Powder)</label>
+            <div class="grid grid-cols-4 gap-1 text-center text-xs" id="groupChiliPowder">
+              <button type="button" onclick="setSelectOpt('ChiliPowder', '不加')" class="btn-chili-powder border rounded-lg py-1.5 font-bold border-amber-500 bg-amber-100 text-amber-900">不加</button>
+              <button type="button" onclick="setSelectOpt('ChiliPowder', '小')" class="btn-chili-powder border rounded-lg py-1.5 font-bold border-gray-300 bg-white">微辣</button>
+              <button type="button" onclick="setSelectOpt('ChiliPowder', '中')" class="btn-chili-powder border rounded-lg py-1.5 font-bold border-gray-300 bg-white">中辣</button>
+              <button type="button" onclick="setSelectOpt('ChiliPowder', '大')" class="btn-chili-powder border rounded-lg py-1.5 font-bold border-gray-300 bg-white">大辣</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 pt-1">
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-1">整單辣醬 (Overall_Chili_Sauce)</label>
+              <select id="selectChiliSauce" class="w-full border border-amber-300 rounded-xl p-2 text-xs bg-white font-bold">
+                <option value="不加">不加辣醬</option>
+                <option value="要">加獨門辣醬 🌶️</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-1">蔬菜分裝 (Veg_Separate)</label>
+              <select id="selectVegSeparate" class="w-full border border-amber-300 rounded-xl p-2 text-xs bg-white font-bold">
+                <option value="否">不分裝 (混裝)</option>
+                <option value="是">蔬菜獨立分裝 🥬</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="pt-1">
+            <label class="block text-xs font-bold text-gray-600 mb-1">加購/索取額外醬包 (Extra Packs)</label>
+
+            <div class="grid grid-cols-3 gap-2 text-center text-xs">
+              <div class="bg-amber-50 p-1.5 rounded-xl border border-amber-200">
+                <span class="block font-bold text-gray-600">椒鹽包</span>
+                <input type="number" id="inputExtraPepper" value="0" min="0" class="w-full text-center border rounded mt-1 p-0.5 font-bold" />
+              </div>
+
+              <div class="bg-amber-50 p-1.5 rounded-xl border border-amber-200">
+                <span class="block font-bold text-gray-600">辣粉包</span>
+                <input type="number" id="inputExtraChili" value="0" min="0" class="w-full text-center border rounded mt-1 p-0.5 font-bold" />
+              </div>
+
+              <div class="bg-amber-50 p-1.5 rounded-xl border border-amber-200">
+                <span class="block font-bold text-gray-600">醬料包</span>
+                <input type="number" id="inputExtraSauce" value="0" min="0" class="w-full text-center border rounded mt-1 p-0.5 font-bold" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-4 space-y-2">
+          <div>
+            <label class="block text-xs font-bold text-gray-600 mb-1">折扣碼/優惠代碼 (Promo_Code_Used)</label>
+            <input type="text" id="inputPromoCode" placeholder="如：FULL500_50" class="w-full border border-amber-300 rounded-xl p-2 text-xs uppercase focus:ring-2 focus:ring-amber-500 outline-none" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-gray-600 mb-1">訂單備註 (Remarks)</label>
+            <input type="text" id="inputRemarks" placeholder="如有其他特殊要求請填寫" class="w-full border border-amber-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-amber-500 outline-none" />
+          </div>
+        </div>
+      </div>
+
+      <div class="p-4 bg-white border-t flex items-center justify-between">
+        <div>
+          <span class="text-xs text-gray-500 font-bold">總計金額 (Total_Amount)</span>
+          <div class="text-2xl font-black text-red-600">$<span id="modalTotalPrice">0</span></div>
+        </div>
+
+        <div class="flex space-x-2">
+          <button onclick="closeCheckoutModal()" class="px-4 py-2.5 rounded-xl border border-gray-300 text-gray-600 font-bold hover:bg-gray-50 text-sm">返回選購</button>
+          <button id="btnSubmitOrder" onclick="submitOrder()" class="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-black shadow-md text-base">確認送出</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+
+    // ============================================================
+    // LINE LIFF
+    // ============================================================
+
+    const MY_LIFF_ID = "2011821149-U7DzFZ21";
+    let liffUserId = "";
+
+
+    // ============================================================
+    // 預設分類字典與順序
+    // ============================================================
+
+    let categoryMap = {
+      'X': '套餐 / 組合類',
+      'M': '肉類',
+      'O': '內臟類',
+      'S': '豆乾蛋類',
+      'V': '蔬菜 / 青菜類',
+      'P': '加工/火鍋料',
+      'SF': '海鮮類',
+      'D': '飲料類',
+      'C': '醬料 / 調味類'
+    };
+
+    let categoryOrder = ['X', 'M', 'O', 'S', 'V', 'P', 'SF', 'D', 'C'];
+
+    let rawProducts = [];
+    let cart = {};
+
+    let storeSettings = {
+      openTime: "16:00",
+      closeTime: "21:30",
+      disabledSlots: ["19:00-20:00", "21:00-21:15"]
+    };
+
+    let valOverallPepper = '正常';
+    let valOverallChiliPowder = '不加';
+
+
+    // ============================================================
+    // 取得前綴代碼
+    // ============================================================
+
+    function getPrefix(id) {
+
+      if (!id) return '';
+
+      const u = String(id).toUpperCase().trim();
+
+      const prefixes = Object.keys(categoryMap)
+        .map(prefix => String(prefix).toUpperCase().trim())
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length);
+
+      const matched = prefixes.find(prefix => u.startsWith(prefix));
+
+      return matched || '';
+    }
+
+
+    // ============================================================
+    // 初始化
+    // ============================================================
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initLiff();
+      loadProductsAndRules();
+    });
+
+
+    // ============================================================
+    // LINE LIFF
+    // ============================================================
+
+   function initLiff() {
+
+  console.log("=== LIFF 初始化開始 ===");
+
+  // ------------------------------------------------------------
+  // 1. 檢查 LIFF SDK 是否存在
+  // ------------------------------------------------------------
+
+  if (typeof liff === 'undefined') {
+
+    console.warn(
+      "LIFF SDK 無法使用，略過 LIFF 初始化。"
+    );
+
+    return;
+  }
+
+
+  // ------------------------------------------------------------
+  // 2. 檢查 LIFF ID
+  // ------------------------------------------------------------
+
+  if (
+    !MY_LIFF_ID ||
+    MY_LIFF_ID === "YOUR_LIFF_ID_HERE"
+  ) {
+
+    console.warn(
+      "LIFF ID 尚未設定，略過 LIFF 初始化。"
+    );
+
+    return;
+  }
+
+
+  console.log(
+    "LIFF ID:",
+    MY_LIFF_ID
+  );
+
+  console.log(
+    "目前網址:",
+    window.location.href
+  );
+
+
+  // ------------------------------------------------------------
+  // 3. 判斷目前是否可能處於 Google Apps Script iframe
+  // ------------------------------------------------------------
+
+  const currentUrl =
+    String(window.location.href || '');
+
+  const isGoogleScriptIframe =
+    currentUrl.includes('userCodeAppPanel') ||
+    currentUrl.includes('googleusercontent.com');
+
+
+  if (isGoogleScriptIframe) {
+
+    console.warn(
+      "目前網頁執行於 Google Apps Script iframe 環境，略過 LIFF 初始化。"
+    );
+
+    console.warn(
+      "點餐功能不受影響，LINE User ID 將保持空白。"
+    );
+
+    return;
+  }
+
+
+  // ------------------------------------------------------------
+  // 4. 執行 LIFF 初始化
+  // ------------------------------------------------------------
+
+  try {
+
+    liff.init({
+
+      liffId:
+        MY_LIFF_ID,
+
+      withLoginOnExternalBrowser:
+        true
+
+    })
+
+      .then(() => {
+
+        console.log(
+          "LIFF init 成功"
+        );
+
+
+        // ------------------------------------------------------
+        // 5. 檢查登入狀態
+        // ------------------------------------------------------
+
+        let loggedIn = false;
+
+        try {
+
+          loggedIn =
+            liff.isLoggedIn();
+
+        } catch (e) {
+
+          console.warn(
+            "無法取得 LIFF 登入狀態，略過 LINE 身分讀取。"
+          );
+
+          return;
+
+        }
+
+
+        console.log(
+          "isLoggedIn:",
+          loggedIn
+        );
+
+
+        let inClient = false;
+
+        try {
+
+          inClient =
+            liff.isInClient();
+
+        } catch (e) {
+
+          console.warn(
+            "無法判斷是否位於 LINE App。"
+          );
+
+        }
+
+
+        console.log(
+          "isInClient:",
+          inClient
+        );
+
+
+        if (!loggedIn) {
+
+          console.warn(
+            "LINE 使用者尚未登入，略過 Profile 取得。"
+          );
+
+          return;
+        }
+
+
+        // ------------------------------------------------------
+        // 6. 取得 LINE Profile
+        // ------------------------------------------------------
+
+        console.log(
+          "LINE 使用者已登入，開始取得 Profile..."
+        );
+
+
+        return liff.getProfile()
+
+          .then(profile => {
+
+            console.log(
+              "LIFF Profile 取得成功"
+            );
+
+            console.log(
+              "LINE Display Name:",
+              profile.displayName
+            );
+
+            console.log(
+              "LINE User ID:",
+              profile.userId
+            );
+
+
+            liffUserId =
+              profile.userId || "";
+
+
+            const nameInput =
+              document.getElementById(
+                'inputCustomerName'
+              );
+
+
+            if (
+              nameInput &&
+              profile.displayName
+            ) {
+
+              nameInput.value =
+                profile.displayName;
+
+              console.log(
+                "客戶姓名已自動帶入:",
+                profile.displayName
+              );
+
+            }
+
+          })
+
+          .catch(err => {
+
+            console.warn(
+              "LIFF Profile 無法取得，略過 LINE 身分帶入。",
+              err
+            );
+
+          });
+
+      })
+
+      .catch(err => {
+
+        // ------------------------------------------------------
+        // LIFF 初始化失敗
+        // 不阻止點餐系統繼續運作
+        // ------------------------------------------------------
+
+        console.warn(
+          "LIFF 初始化無法使用，已略過。點餐功能不受影響。"
+        );
+
+        if (err) {
+
+          console.warn(
+            "LIFF 錯誤資訊:",
+            err.message || err
+          );
+
+        }
+
+      });
+
+  } catch (err) {
+
+    // ----------------------------------------------------------
+    // 防止 LIFF SDK 發生同步例外時影響整個點餐網站
+    // ----------------------------------------------------------
+
+    console.warn(
+      "LIFF 發生初始化例外，已略過。點餐功能不受影響。"
+    );
+
+    if (err) {
+
+      console.warn(
+        "LIFF 錯誤資訊:",
+        err.message || err
+      );
+
+    }
+
+  }
+}
+
+
+    // ============================================================
+    // 載入商品 / 分類 / 設定
+    // ============================================================
+
+    function loadProductsAndRules() {
+
+      document.getElementById('loadingState').classList.remove('hidden');
+      document.getElementById('errorState').classList.add('hidden');
+      document.getElementById('productSections').classList.add('hidden');
+
+      if (
+        typeof google !== 'undefined' &&
+        google.script &&
+        google.script.run
+      ) {
+
+        // --------------------------------------------------------
+        // 1. Settings
+        // --------------------------------------------------------
+
+        google.script.run
+
+          .withSuccessHandler(settings => {
+
+            if (settings) {
+              storeSettings = settings;
+              renderPickupTimeSlots();
+            }
+
+          })
+
+          .getStoreSettings();
+
+
+        // --------------------------------------------------------
+        // 2. CATALOG_RULES
+        // --------------------------------------------------------
+
+        google.script.run
+
+          .withSuccessHandler(rules => {
+
+            if (
+              rules &&
+              Array.isArray(rules) &&
+              rules.length > 0
+            ) {
+
+              const dynamicMap = {};
+              const dynamicOrder = [];
+
+
+              rules.forEach(r => {
+
+                const prefix = String(
+                  r.Prefix ||
+                  r['前綴代碼'] ||
+                  r.Category_Prefix ||
+                  ''
+                )
+                  .trim()
+                  .toUpperCase();
+
+
+                const name = String(
+                  r.Category_Name ||
+                  r['分類名稱'] ||
+                  r.Name ||
+                  ''
+                )
+                  .trim();
+
+
+                if (prefix && name) {
+
+                  dynamicMap[prefix] = name;
+
+                  if (!dynamicOrder.includes(prefix)) {
+                    dynamicOrder.push(prefix);
+                  }
+
+                }
+
+              });
+
+
+              if (Object.keys(dynamicMap).length > 0) {
+                categoryMap = dynamicMap;
+                categoryOrder = dynamicOrder;
+              }
+
+            } else {
+
+              console.warn(
+                'CATALOG_RULES 沒有取得有效資料，將使用預設 categoryMap'
+              );
+
+            }
+
+
+            // ----------------------------------------------------
+            // 3. Products
+            // ----------------------------------------------------
+
+            google.script.run
+
+              .withSuccessHandler(onProductsLoaded)
+
+              .withFailureHandler(onProductsLoadError)
+
+              .getProductsForFrontend();
+
+          })
+
+
+          .withFailureHandler(err => {
+
+            console.error(
+              'getCatalogRules() 失敗：',
+              err
+            );
+
+
+            google.script.run
+
+              .withSuccessHandler(onProductsLoaded)
+
+              .withFailureHandler(onProductsLoadError)
+
+              .getProductsForFrontend();
+
+          })
+
+
+          .getCatalogRules();
+
+
+      } else {
+
+        // 本地模擬測試
+
+        setTimeout(() => {
+
+          renderPickupTimeSlots();
+
+          onProductsLoaded([
+
+            {
+              Product_ID: "O001",
+              Online_Name: "香脆雞軫 (半斤)",
+              Price: "$250"
+            },
+
+            {
+              Product_ID: "M001",
+              Online_Name: "香脂雞尾巴 (七里香) (半斤)",
+              Price: "$250"
+            },
+
+            {
+              Product_ID: "S003",
+              Online_Name: "【熱銷】煙燻千層豆包",
+              Price: "$30"
+            },
+
+            {
+              Product_ID: "P001",
+              Online_Name: "【經典】軟Q煙燻米血",
+              Price: "$25"
+            },
+
+            {
+              Product_ID: "V001",
+              Online_Name: "滷香海帶 (2條)",
+              Price: "$25"
+            },
+
+            {
+              Product_ID: "SF001",
+              Online_Name: "鮮彈刻花枝 (半斤)",
+              Price: "$250"
+            }
+
+          ]);
+
+        }, 600);
+      }
+    }
+
+
+    // ============================================================
+    // 取餐時間
+    // ============================================================
+
+    function renderPickupTimeSlots() {
+
+      const selectElem =
+        document.getElementById('selectPickupTime');
+
+      selectElem.innerHTML =
+        '<option value="">-- 請選擇預計取餐時間 --</option>';
+
+      const openStr =
+        storeSettings.openTime || "16:00";
+
+      const closeStr =
+        storeSettings.closeTime || "21:30";
+
+      const disabledArr =
+        storeSettings.disabledSlots || [];
+
+      const [openH, openM] =
+        openStr.split(':').map(Number);
+
+      const [closeH, closeM] =
+        closeStr.split(':').map(Number);
+
+      let currMin =
+        openH * 60 + openM;
+
+      const endMin =
+        closeH * 60 + closeM;
+
+      const INTERVAL_MINUTES = 30;
+
+      while (currMin < endMin) {
+
+        let nextMin =
+          currMin + INTERVAL_MINUTES;
+
+        if (nextMin > endMin) {
+          nextMin = endMin;
+        }
+
+        const startHH =
+          String(Math.floor(currMin / 60)).padStart(2, '0');
+
+        const startMM =
+          String(currMin % 60).padStart(2, '0');
+
+        const endHH =
+          String(Math.floor(nextMin / 60)).padStart(2, '0');
+
+        const endMM =
+          String(nextMin % 60).padStart(2, '0');
+
+        const slotLabel =
+          `${startHH}:${startMM} - ${endHH}:${endMM}`;
+
+        const isDisabled =
+          disabledArr.some(dis => {
+
+            const d = dis.trim();
+
+            if (!d) return false;
+
+            if (d === slotLabel) return true;
+
+            const [dStart, dEnd] =
+              d.split('-');
+
+            if (dStart && dEnd) {
+
+              const [dsH, dsM] =
+                dStart.split(':').map(Number);
+
+              const [deH, deM] =
+                dEnd.split(':').map(Number);
+
+              const dsMin =
+                dsH * 60 + dsM;
+
+              const deMin =
+                deH * 60 + deM;
+
+              return (
+                currMin >= dsMin &&
+                nextMin <= deMin
+              );
+
+            }
+
+            return false;
+          });
+
+
+        const opt =
+          document.createElement('option');
+
+        opt.value =
+          slotLabel;
+
+
+        if (isDisabled) {
+
+          opt.textContent =
+            `${slotLabel} (已額滿 / 暫不開放)`;
+
+          opt.disabled = true;
+
+          opt.className =
+            'text-gray-400 bg-gray-100';
+
+        } else {
+
+          opt.textContent =
+            slotLabel;
+
+        }
+
+
+        selectElem.appendChild(opt);
+
+        currMin = nextMin;
+      }
+    }
+
+
+    // ============================================================
+    // 商品載入完成
+    // ============================================================
+
+    function onProductsLoaded(data) {
+
+      if (
+        !data ||
+        !Array.isArray(data) ||
+        data.length === 0
+      ) {
+
+        onProductsLoadError(
+          'Products 分頁無可用商品資料'
+        );
+
+        return;
+      }
+
+
+      rawProducts = data
+
+        .map((item, index) => {
+
+          const lowerKeys = {};
+
+          Object.keys(item).forEach(k => {
+
+            if (k) {
+              lowerKeys[
+                k.trim().toLowerCase()
+              ] = item[k];
+            }
+
+          });
+
+
+          const id =
+            lowerKeys['product_id'] ||
+            lowerKeys['id'] ||
+            lowerKeys['code'] ||
+            `ITEM_${index + 1}`;
+
+
+          const name =
+            lowerKeys['online_name'] ||
+            lowerKeys['item_name'] ||
+            lowerKeys['product_name'] ||
+            lowerKeys['品名'] ||
+            '未命名商品';
+
+
+          const rawPrice =
+            lowerKeys['price'] ||
+            lowerKeys['unit_price'] ||
+            lowerKeys['售價nt$'] ||
+            0;
+
+
+          const cleanedPriceStr =
+            String(rawPrice)
+              .replace(/[\$,\s]/g, '')
+              .replace(/[^0-9.]/g, '');
+
+
+          const price =
+            Number(cleanedPriceStr) || 0;
+
+
+          return {
+            id: String(id).trim(),
+            name: String(name).trim(),
+            price
+          };
+
+        })
+
+        .filter(p => p.id !== '');
+
+
+      document
+        .getElementById('loadingState')
+        .classList.add('hidden');
+
+      document
+        .getElementById('productSections')
+        .classList.remove('hidden');
+
+
+      renderNavigation();
+      renderProducts();
+    }
+
+
+    function onProductsLoadError(err) {
+
+      document
+        .getElementById('loadingState')
+        .classList.add('hidden');
+
+      document
+        .getElementById('errorState')
+        .classList.remove('hidden');
+
+
+      const detail =
+        (typeof err === 'object')
+          ? (err.message || JSON.stringify(err))
+          : err;
+
+
+      document
+        .getElementById('errorMessage')
+        .innerText =
+        `讀取失敗：${detail}`;
+    }
+
+
+    // ============================================================
+    // 分類導覽
+    // ============================================================
+
+    function renderNavigation() {
+
+      const navContainer =
+        document.getElementById('categoryNav');
+
+      navContainer.innerHTML = '';
+
+
+      categoryOrder.forEach(prefix => {
+
+        const catName =
+          categoryMap[prefix];
+
+        if (!catName) return;
+
+
+        const hasItems =
+          rawProducts.some(
+            p =>
+              getPrefix(p.id) ===
+              String(prefix).toUpperCase()
+          );
+
+
+        if (!hasItems) return;
+
+
+        const btn =
+          document.createElement('a');
+
+
+        btn.href =
+          `#sec-${prefix}`;
+
+
+        btn.className =
+          'inline-block bg-amber-800/90 hover:bg-amber-700 text-amber-100 font-bold px-3.5 py-1.5 rounded-xl text-sm border border-amber-600 shadow-sm transition flex-shrink-0';
+
+
+        btn.innerText =
+          catName;
+
+
+        navContainer.appendChild(btn);
+
+      });
+    }
+
+
+    // ============================================================
+    // 商品
+    // ============================================================
+
+    function renderProducts() {
+
+      const container =
+        document.getElementById('productSections');
+
+      container.innerHTML = '';
+
+
+      categoryOrder.forEach(prefix => {
+
+        const normalizedPrefix =
+          String(prefix).toUpperCase();
+
+        const catName =
+          categoryMap[prefix] || '其他類';
+
+
+        const items =
+          rawProducts.filter(
+            p =>
+              getPrefix(p.id) ===
+              normalizedPrefix
+          );
+
+
+        if (items.length === 0) return;
+
+
+        const section =
+          document.createElement('section');
+
+
+        section.id =
+          `sec-${prefix}`;
+
+
+        section.className =
+          'scroll-mt-28';
+
+
+        section.innerHTML = `
+          <div class="flex items-center space-x-2 border-b-2 border-amber-600 pb-2 mb-3">
+            <h2 class="text-xl font-black text-amber-950">${catName}</h2>
+            <span class="text-xs text-amber-800/60 font-bold">(${items.length})</span>
+          </div>
+          <div class="grid grid-cols-2 gap-3" id="grid-${prefix}"></div>
+        `;
+
+
+        container.appendChild(section);
+
+
+        const grid =
+          document.getElementById(
+            `grid-${prefix}`
+          );
+
+
+        items.forEach(item => {
+
+          const qty =
+            cart[item.id] || 0;
+
+
+          const card =
+            document.createElement('div');
+
+
+          card.className =
+            'bg-white rounded-2xl p-3 shadow-sm shadow-amber-900/10 border-2 border-amber-400 flex flex-col justify-between relative hover:shadow-md transition';
+
+
+          card.innerHTML = `
+            <div>
+              <h3 class="text-lg font-black text-gray-800 leading-tight mb-1.5 pt-0.5">${item.name}</h3>
+              <div class="text-red-600 font-black text-base">$${item.price}</div>
+            </div>
+
+            <div class="mt-3 flex items-center justify-between bg-amber-50 rounded-xl p-1 border border-amber-200">
+              <button onclick="updateQty('${item.id}', -1)" class="w-8 h-8 rounded-lg bg-white shadow text-amber-900 font-black text-lg flex items-center justify-center active:scale-95 text-xl">-</button>
+              <span id="qty-${item.id}" class="font-black text-lg text-amber-950 px-1">${qty}</span>
+              <button onclick="updateQty('${item.id}', 1)" class="w-8 h-8 rounded-lg bg-amber-600 shadow text-white font-black text-lg flex items-center justify-center active:scale-95 text-xl">+</button>
+            </div>
+          `;
+
+
+          grid.appendChild(card);
+
+        });
+
+      });
+    }
+
+
+    // ============================================================
+    // 購物車
+    // ============================================================
+
+    function updateQty(id, change) {
+
+      const current =
+        cart[id] || 0;
+
+      const updated =
+        current + change;
+
+
+      if (updated <= 0) {
+        delete cart[id];
+      } else {
+        cart[id] = updated;
+      }
+
+
+      const qtyElem =
+        document.getElementById(`qty-${id}`);
+
+
+      if (qtyElem) {
+        qtyElem.innerText =
+          cart[id] || 0;
+      }
+
+
+      updateTotalSummary();
+    }
+
+
+    function updateTotalSummary() {
+
+      let totalCount = 0;
+      let totalPrice = 0;
+
+
+      Object.keys(cart).forEach(id => {
+
+        const qty =
+          cart[id];
+
+
+        const item =
+          rawProducts.find(
+            p => p.id === id
+          );
+
+
+        if (item) {
+
+          totalCount += qty;
+
+          totalPrice +=
+            item.price * qty;
+
+        }
+
+      });
+
+
+      document.getElementById(
+        'totalItemsCount'
+      ).innerText =
+        totalCount;
+
+
+      document.getElementById(
+        'totalPrice'
+      ).innerText =
+        totalPrice;
+
+
+      document.getElementById(
+        'modalTotalPrice'
+      ).innerText =
+        totalPrice;
+    }
+
+
+    // ============================================================
+    // 結帳視窗
+    // ============================================================
+
+    function openCheckoutModal() {
+
+      const cartList =
+        document.getElementById(
+          'cartItemsList'
+        );
+
+      cartList.innerHTML = '';
+
+
+      const keys =
+        Object.keys(cart);
+
+
+      if (keys.length === 0) {
+
+        alert(
+          '您的購物車是空的，請先挑選美味滷味！'
+        );
+
+        return;
+      }
+
+
+      keys.forEach(id => {
+
+        const item =
+          rawProducts.find(
+            p => p.id === id
+          );
+
+
+        if (!item) return;
+
+
+        const qty =
+          cart[id];
+
+
+        const subtotal =
+          item.price * qty;
+
+
+        const row =
+          document.createElement('div');
+
+
+        row.className =
+          'py-2.5 flex justify-between items-center';
+
+
+        row.innerHTML = `
+          <div>
+            <div class="font-bold text-gray-800 text-sm">${item.name}</div>
+            <div class="text-xs text-gray-400">$${item.price} × ${qty}</div>
+          </div>
+
+          <div class="flex items-center space-x-3">
+            <span class="font-extrabold text-red-600 text-base">$${subtotal}</span>
+
+            <div class="flex items-center space-x-1">
+              <button onclick="updateQty('${id}', -1); openCheckoutModal();" class="w-6 h-6 bg-gray-200 rounded text-xs font-bold">-</button>
+
+              <span class="text-xs font-bold w-4 text-center">${qty}</span>
+
+              <button onclick="updateQty('${id}', 1); openCheckoutModal();" class="w-6 h-6 bg-amber-600 text-white rounded text-xs font-bold">+</button>
+            </div>
+          </div>
+        `;
+
+
+        cartList.appendChild(row);
+
+      });
+
+
+      document
+        .getElementById('checkoutModal')
+        .classList.remove('hidden');
+    }
+
+
+    function closeCheckoutModal() {
+
+      document
+        .getElementById('checkoutModal')
+        .classList.add('hidden');
+
+    }
+
+
+    // ============================================================
+    // 電話驗證
+    // ============================================================
+
+    function validatePhoneNumber(phone) {
+
+      const cleanPhone =
+        String(phone)
+          .replace(/[-\s]/g, '')
+          .trim();
+
+
+      const isMobile =
+        /^09\d{8}$/.test(
+          cleanPhone
+        );
+
+
+      const isLandline =
+        /^0[2-8]\d{7,8}$/.test(
+          cleanPhone
+        );
+
+
+      return (
+        isMobile ||
+        isLandline
+      );
+    }
+
+
+    function validatePhoneRealtime() {
+
+      const phoneVal =
+        document.getElementById(
+          'inputCustomerPhone'
+        ).value;
+
+
+      const errElem =
+        document.getElementById(
+          'phoneError'
+        );
+
+
+      if (
+        phoneVal &&
+        !validatePhoneNumber(phoneVal)
+      ) {
+
+        errElem
+          .classList
+          .remove('hidden');
+
+      } else {
+
+        errElem
+          .classList
+          .add('hidden');
+
+      }
+    }
+
+
+    // ============================================================
+    // 調味
+    // ============================================================
+
+    function setSelectOpt(type, val) {
+
+      if (type === 'Pepper') {
+
+        valOverallPepper =
+          val;
+
+
+        document
+          .querySelectorAll('.btn-pepper')
+          .forEach(btn => {
+
+            if (
+              btn.innerText.includes(
+                val === '小'
+                  ? '少鹽'
+                  : val === '大'
+                    ? '多鹽'
+                    : val
+              )
+            ) {
+
+              btn.className =
+                'btn-pepper border rounded-lg py-1.5 font-bold border-amber-500 bg-amber-100 text-amber-900';
+
+            } else {
+
+              btn.className =
+                'btn-pepper border rounded-lg py-1.5 font-bold border-gray-300 bg-white';
+
+            }
+
+          });
+
+      }
+
+
+      else if (type === 'ChiliPowder') {
+
+        valOverallChiliPowder =
+          val;
+
+
+        document
+          .querySelectorAll('.btn-chili-powder')
+          .forEach(btn => {
+
+            if (
+              btn.innerText.includes(
+                val === '不加'
+                  ? '不加'
+                  : val === '小'
+                    ? '微辣'
+                    : val === '中'
+                      ? '中辣'
+                      : '大辣'
+              )
+            ) {
+
+              btn.className =
+                'btn-chili-powder border rounded-lg py-1.5 font-bold border-amber-500 bg-amber-100 text-amber-900';
+
+            } else {
+
+              btn.className =
+                'btn-chili-powder border rounded-lg py-1.5 font-bold border-gray-300 bg-white';
+
+            }
+
+          });
+
+      }
+    }
+
+
+    // ============================================================
+    // 送出訂單
+    // ============================================================
+
+    function submitOrder() {
+
+      const name =
+        document
+          .getElementById('inputCustomerName')
+          .value
+          .trim();
+
+
+      const phone =
+        document
+          .getElementById('inputCustomerPhone')
+          .value
+          .trim();
+
+
+      const pickupTime =
+        document
+          .getElementById('selectPickupTime')
+          .value;
+
+
+      if (!name) {
+        alert('請填寫顧客姓名！');
+        return;
+      }
+
+
+      if (
+        !phone ||
+        !validatePhoneNumber(phone)
+      ) {
+
+        alert(
+          '請填寫正確的電話號碼（手機或市話）！'
+        );
+
+        return;
+      }
+
+
+      if (!pickupTime) {
+
+        alert(
+          '請選擇預計取餐時間！'
+        );
+
+        return;
+      }
+
+
+      const orderItems = [];
+      let totalAmount = 0;
+
+
+      Object.keys(cart).forEach(id => {
+
+        const item =
+          rawProducts.find(
+            p => p.id === id
+          );
+
+
+        if (item) {
+
+          const qty =
+            cart[id];
+
+
+          const subtotal =
+            item.price * qty;
+
+
+          totalAmount +=
+            subtotal;
+
+
+          orderItems.push({
+
+            id: item.id,
+
+            name: item.name,
+
+            price: item.price,
+
+            qty: qty,
+
+            subtotal: subtotal
+
+          });
+
+        }
+
+      });
+
+
+      if (orderItems.length === 0) {
+
+        alert(
+          '購物車內無商品！'
+        );
+
+        return;
+      }
+
+
+      const payload = {
+
+        lineUserId:
+          liffUserId,
+
+        customerName:
+          name,
+
+        customerPhone:
+          phone,
+
+        pickupTimeSlot:
+          pickupTime,
+
+        overallPepper:
+          valOverallPepper,
+
+        overallChiliPowder:
+          valOverallChiliPowder,
+
+        overallChiliSauce:
+          document
+            .getElementById(
+              'selectChiliSauce'
+            )
+            .value,
+
+        vegSeparate:
+          document
+            .getElementById(
+              'selectVegSeparate'
+            )
+            .value,
+
+        extraPepper:
+          Number(
+            document
+              .getElementById(
+                'inputExtraPepper'
+              )
+              .value
+          ) || 0,
+
+        extraChili:
+          Number(
+            document
+              .getElementById(
+                'inputExtraChili'
+              )
+              .value
+          ) || 0,
+
+        extraSauce:
+          Number(
+            document
+              .getElementById(
+                'inputExtraSauce'
+              )
+              .value
+          ) || 0,
+
+        promoCode:
+          document
+            .getElementById(
+              'inputPromoCode'
+            )
+            .value
+            .trim(),
+
+        remarks:
+          document
+            .getElementById(
+              'inputRemarks'
+            )
+            .value
+            .trim(),
+
+        items:
+          orderItems,
+
+        totalAmount:
+          totalAmount
+      };
+
+
+      const btnSubmit =
+        document.getElementById(
+          'btnSubmitOrder'
+        );
+
+
+      btnSubmit.disabled = true;
+
+      btnSubmit.innerText =
+        '處理中...';
+
+
+      if (
+        typeof google !== 'undefined' &&
+        google.script &&
+        google.script.run
+      ) {
+
+        google.script.run
+
+          .withSuccessHandler(res => {
+
+            alert(
+              '訂單已成功送出！感謝您的訂購。'
+            );
+
+
+            if (
+              typeof liff !== 'undefined' &&
+              liff.isInClient()
+            ) {
+
+              liff.closeWindow();
+
+            } else {
+
+              closeCheckoutModal();
+
+              cart = {};
+
+              renderProducts();
+
+              updateTotalSummary();
+
+              btnSubmit.disabled =
+                false;
+
+              btnSubmit.innerText =
+                '確認送出';
+
+            }
+
+          })
+
+          .withFailureHandler(err => {
+
+            alert(
+              '送出失敗：' +
+              (err.message || err)
+            );
+
+
+            btnSubmit.disabled =
+              false;
+
+            btnSubmit.innerText =
+              '確認送出';
+
+          })
+
+          .submitOrderData(
+            payload
+          );
+
+      }
+
+
+      else {
+
+        setTimeout(() => {
+
+          alert(
+            '【測試模式】訂單已模擬送出：\n' +
+            JSON.stringify(
+              payload,
+              null,
+              2
+            )
+          );
+
+
+          if (
+            typeof liff !== 'undefined' &&
+            liff.isInClient()
+          ) {
+
+            liff.closeWindow();
+
+          } else {
+
+            closeCheckoutModal();
+
+            cart = {};
+
+            renderProducts();
+
+            updateTotalSummary();
+
+            btnSubmit.disabled =
+              false;
+
+            btnSubmit.innerText =
+              '確認送出';
+
+          }
+
+        }, 1000);
+      }
+    }
+
+  </script>
+</body>
+</html>
