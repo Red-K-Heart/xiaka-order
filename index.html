@@ -219,8 +219,80 @@
     // LINE LIFF
     // ============================================================
 
-    const MY_LIFF_ID = "2011821149-U7DzFZ21";
-    let liffUserId = "";
+const MY_LIFF_ID = "2011821149-U7DzFZ21";
+let liffUserId = "";
+
+// ============================================================
+// Google Apps Script Web App API
+// ============================================================
+
+const GAS_WEB_APP_URL =
+  "https://script.google.com/macros/s/AKfycbzvNQOzzm16906irmZtSA_3mfWO2GDWqZSjTVEMa3Ao5A638n-JdfrRYov197A_DM1TOA/exec";
+
+
+// ============================================================
+// JSONP 呼叫 GAS API
+// GitHub Pages → GAS
+// ============================================================
+
+function callGasApi(apiName, successCallback, errorCallback) {
+
+  const callbackName =
+    "gasApiCallback_" +
+    Date.now() +
+    "_" +
+    Math.floor(Math.random() * 100000);
+
+
+  window[callbackName] = function(data) {
+
+    try {
+
+      if (typeof successCallback === "function") {
+        successCallback(data);
+      }
+
+    } finally {
+
+      delete window[callbackName];
+
+      if (script && script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+
+    }
+  };
+
+
+  const script =
+    document.createElement("script");
+
+
+  script.src =
+    GAS_WEB_APP_URL +
+    "?api=" +
+    encodeURIComponent(apiName) +
+    "&callback=" +
+    encodeURIComponent(callbackName);
+
+
+  script.onerror = function(error) {
+
+    delete window[callbackName];
+
+    if (script.parentNode) {
+      script.parentNode.removeChild(script);
+    }
+
+    if (typeof errorCallback === "function") {
+      errorCallback(error);
+    }
+
+  };
+
+
+  document.body.appendChild(script);
+}
 
 
     // ============================================================
