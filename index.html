@@ -1692,23 +1692,34 @@ window.addEventListener('message', event => {
 
       // ============================================================
       // GAS 網頁版使用 google.script.run
-      // GitHub Pages 使用 HTTP POST → GAS doPost()
+      // GitHub Pages 使用 JSONP → GAS doGet()
       // ============================================================
 
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
+      if (
+        typeof google !== 'undefined' &&
+        google.script &&
+        google.script.run
+      ) {
 
         google.script.run
           .withSuccessHandler(res => {
 
             alert('訂單已成功送出！感謝您的訂購。');
 
-            if (typeof liff !== 'undefined' && liff.isInClient()) {
+            if (
+              typeof liff !== 'undefined' &&
+              liff.isInClient()
+            ) {
+
               liff.closeWindow();
+
             } else {
+
               closeCheckoutModal();
               cart = {};
               renderProducts();
               updateTotalSummary();
+
               btnSubmit.disabled = false;
               btnSubmit.innerText = '確認送出';
             }
@@ -1716,7 +1727,11 @@ window.addEventListener('message', event => {
           })
           .withFailureHandler(err => {
 
-            alert('送出失敗：' + (err.message || err));
+            alert(
+              '送出失敗：' +
+              (err.message || err)
+            );
+
             btnSubmit.disabled = false;
             btnSubmit.innerText = '確認送出';
 
@@ -1725,22 +1740,71 @@ window.addEventListener('message', event => {
 
       } else {
 
-        // GitHub Pages → GAS doPost()
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = GAS_WEB_APP_URL;
-        form.target = 'gasOrderFrame';
-        form.style.display = 'none';
+        // GitHub Pages → GAS doGet() JSONP
 
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'payload';
-        input.value = JSON.stringify(payload);
+        submitOrderToGas(
+          payload,
 
-        form.appendChild(input);
-        document.body.appendChild(form);
-        form.submit();
-        form.remove();
+          result => {
+
+            if (
+              result &&
+              result.status === 'success'
+            ) {
+
+              alert(
+                '訂單已成功送出！感謝您的訂購。'
+              );
+
+              if (
+                typeof liff !== 'undefined' &&
+                liff.isInClient()
+              ) {
+
+                liff.closeWindow();
+
+              } else {
+
+                closeCheckoutModal();
+                cart = {};
+                renderProducts();
+                updateTotalSummary();
+
+                btnSubmit.disabled = false;
+                btnSubmit.innerText = '確認送出';
+              }
+
+            } else {
+
+              alert(
+                '送出失敗：' +
+                (
+                  result?.message ||
+                  '未知錯誤'
+                )
+              );
+
+              btnSubmit.disabled = false;
+              btnSubmit.innerText = '確認送出';
+            }
+          },
+
+          error => {
+
+            console.error(
+              'submitOrderToGas() 失敗：',
+              error
+            );
+
+            alert(
+              '送出失敗，請稍後再試。'
+            );
+
+            btnSubmit.disabled = false;
+            btnSubmit.innerText = '確認送出';
+          }
+        );
+      }
       }
     }
   </script>
