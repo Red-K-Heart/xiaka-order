@@ -264,37 +264,51 @@ const GAS_WEB_APP_URL =
 
 function callGasApi(apiName, successCallback, errorCallback) {
 
+  const startedAt = performance.now();
+  const timeoutMs = 15000;
+  let completed = false;
+  let timeoutId;
+  let script;
+
   const callbackName =
     "gasApiCallback_" +
     Date.now() +
     "_" +
     Math.floor(Math.random() * 100000);
 
+  console.info(`[GAS] ${apiName} 開始`);
+
+  function cleanup() {
+    if (timeoutId) clearTimeout(timeoutId);
+    delete window[callbackName];
+    if (script && script.parentNode) {
+      script.parentNode.removeChild(script);
+    }
+  }
+
+  function fail(error, reason) {
+    if (completed) return;
+    completed = true;
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    cleanup();
+    console.error(`[GAS] ${apiName} ${reason}，耗時 ${elapsedMs} ms`, error);
+    if (typeof errorCallback === "function") {
+      errorCallback(error);
+    }
+  }
 
   window[callbackName] = function(data) {
-
-    try {
-
-      if (typeof successCallback === "function") {
-        successCallback(data);
-      }
-
-    } finally {
-
-      delete window[callbackName];
-
-      if (script && script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-
+    if (completed) return;
+    completed = true;
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    cleanup();
+    console.info(`[GAS] ${apiName} 成功，耗時 ${elapsedMs} ms`);
+    if (typeof successCallback === "function") {
+      successCallback(data);
     }
   };
 
-
-  const script =
-    document.createElement("script");
-
-
+  script = document.createElement("script");
   script.src =
     GAS_WEB_APP_URL +
     "?api=" +
@@ -302,26 +316,17 @@ function callGasApi(apiName, successCallback, errorCallback) {
     "&callback=" +
     encodeURIComponent(callbackName);
 
-
   script.onerror = function(error) {
-
-    delete window[callbackName];
-
-    if (script.parentNode) {
-      script.parentNode.removeChild(script);
-    }
-
-    if (typeof errorCallback === "function") {
-      errorCallback(error);
-    }
-
+    fail(error || new Error("JSONP script 載入失敗"), "載入失敗");
   };
 
+  timeoutId = setTimeout(function() {
+    fail(new Error(`JSONP 超過 ${timeoutMs / 1000} 秒沒有回應`), "逾時");
+  }, timeoutMs);
 
   document.body.appendChild(script);
 }
 
-    
 // ============================================================
 // JSONP 送出訂單
 // GitHub Pages → GAS doGet()
@@ -722,6 +727,8 @@ function submitOrderToGas(data, successCallback, errorCallback) {
 
 function loadProductsAndRules() {
 
+  console.info('[載入診斷] 開始載入流程：storeSettings、catalogRules');
+
   document.getElementById('loadingState').classList.remove('hidden');
   document.getElementById('errorState').classList.add('hidden');
   document.getElementById('productSections').classList.add('hidden');
@@ -863,6 +870,8 @@ function loadProductsAndRules() {
 // ============================================================
 
 function loadProductsFromGas() {
+
+  console.info('[載入診斷] catalogRules 已完成，開始載入 products');
 
   callGasApi(
 
@@ -1807,7 +1816,10 @@ function loadProductsFromGas() {
   function openOrderQuery() {
 
     alert('訂單查詢功能建置中');
-    
+
+  }
+
   </script>
 </body>
 </html>
+
