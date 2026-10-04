@@ -63,19 +63,45 @@
   </main>
 
   <div class="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-amber-600 shadow-2xl z-40">
-    <div class="max-w-md mx-auto p-3 flex justify-between items-center">
-      <div class="flex flex-col">
-        <span class="text-sm text-gray-500 font-bold">已選 <span id="totalItemsCount" class="text-amber-700 text-lg">0</span> 件商品</span>
-        <div class="text-amber-900 text-2xl font-black">
-          合計：<span class="text-red-600">$<span id="totalPrice">0</span></span>
-        </div>
+  <div class="max-w-md mx-auto p-3 flex justify-between items-center">
+
+    <!-- 左側：購物車金額 -->
+    <div class="flex flex-col">
+      <span class="text-sm text-gray-500 font-bold">
+        已選 <span id="totalItemsCount" class="text-amber-700 text-lg">0</span> 件商品
+      </span>
+
+      <div class="text-amber-900 text-2xl font-black">
+        合計：
+        <span class="text-red-600">
+          $<span id="totalPrice">0</span>
+        </span>
       </div>
-      <button onclick="openCheckoutModal()" class="bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-extrabold text-xl px-6 py-3 rounded-2xl shadow-lg transition duration-150 flex items-center space-x-2">
-        <i class="fa-solid fa-basket-shopping text-xl"></i>
-        <span>確認結帳</span>
-      </button>
     </div>
+
+
+    <!-- 中間：訂單查詢 Icon -->
+    <button
+      type="button"
+      onclick="openOrderQuery()"
+      class="flex flex-col items-center justify-center text-amber-800 px-2 py-1 active:scale-95 transition duration-150"
+    >
+      <i class="fa-solid fa-receipt text-2xl"></i>
+      <span class="text-[10px] font-bold mt-0.5">訂單查詢</span>
+    </button>
+
+
+    <!-- 右側：確認結帳 -->
+    <button
+      onclick="openCheckoutModal()"
+      class="bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-extrabold text-xl px-6 py-3 rounded-2xl shadow-lg transition duration-150 flex items-center space-x-2"
+    >
+      <i class="fa-solid fa-basket-shopping text-xl"></i>
+      <span>確認結帳</span>
+    </button>
+
   </div>
+</div>
 
   <div id="checkoutModal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
     <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl max-h-[90vh] flex flex-col shadow-2xl border-2 border-amber-400 shadow-amber-900/10 overflow-hidden">
