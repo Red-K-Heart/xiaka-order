@@ -250,12 +250,12 @@
       </div>
 
       <div class="p-4 overflow-y-auto flex-1 space-y-4">
-        <p class="text-sm text-gray-600">請輸入訂單編號和下單時填寫的完整電話號碼。</p>
+        <p class="text-sm text-gray-600">請輸入客戶訂單編號和下單時填寫的完整電話號碼。</p>
 
         <form id="orderQueryForm" onsubmit="submitOrderQuery(event)" class="space-y-3">
           <div>
-            <label for="orderQueryId" class="block text-xs font-bold text-gray-600 mb-1">訂單編號</label>
-            <input id="orderQueryId" type="text" autocomplete="off" required placeholder="請輸入訂單編號" class="w-full border border-amber-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
+            <label for="orderQueryId" class="block text-xs font-bold text-gray-600 mb-1">客戶訂單編號</label>
+            <input id="orderQueryId" type="text" autocomplete="off" required placeholder="例如 A1754222；舊訂單可輸入原訂單編號" class="w-full border border-amber-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
           </div>
           <div>
             <label for="orderQueryPhone" class="block text-xs font-bold text-gray-600 mb-1">下單電話</label>
@@ -1794,10 +1794,15 @@ function loadProductsFromGas(successCallback, errorCallback) {
         google.script.run
           .withSuccessHandler(res => {
 
-            const orderId = res && (res.order_id || res.Order_ID);
+            const customerOrderCode = res && (
+              res.customer_order_code ||
+              res.Customer_Order_Code ||
+              res.order_id ||
+              res.Order_ID
+            );
             alert(
               '訂單已成功送出！感謝您的訂購。' +
-              (orderId ? '\n訂單編號：' + orderId : '') +
+              (customerOrderCode ? '\n客戶訂單編號：' + customerOrderCode : '') +
               '\n查詢時請使用此編號和下單電話。'
             );
 
@@ -1847,10 +1852,14 @@ function loadProductsFromGas(successCallback, errorCallback) {
               result.status === 'success'
             ) {
 
-              const orderId = result.order_id || result.Order_ID;
+              const customerOrderCode =
+                result.customer_order_code ||
+                result.Customer_Order_Code ||
+                result.order_id ||
+                result.Order_ID;
               alert(
                 '訂單已成功送出！感謝您的訂購。' +
-                (orderId ? '\n訂單編號：' + orderId : '') +
+                (customerOrderCode ? '\n客戶訂單編號：' + customerOrderCode : '') +
                 '\n查詢時請使用此編號和下單電話。'
               );
 
@@ -1928,7 +1937,7 @@ function loadProductsFromGas(successCallback, errorCallback) {
   function submitOrderQuery(event) {
     event.preventDefault();
 
-    const orderId = document.getElementById('orderQueryId').value.trim();
+    const orderId = document.getElementById('orderQueryId').value.trim().toUpperCase();
     const phone = document.getElementById('orderQueryPhone').value
       .trim()
       .replace(/[\s-]/g, '');
@@ -1938,7 +1947,7 @@ function loadProductsFromGas(successCallback, errorCallback) {
     document.getElementById('orderQueryResult').classList.add('hidden');
 
     if (!orderId) {
-      showOrderQueryError('請輸入訂單編號。');
+      showOrderQueryError('請輸入客戶訂單編號。');
       return;
     }
 
@@ -2019,7 +2028,7 @@ function loadProductsFromGas(successCallback, errorCallback) {
       container.appendChild(row);
     }
 
-    addRow('訂單編號', order.order_id);
+    addRow('客戶訂單編號', order.customer_order_code || order.order_id);
     addRow('訂單狀態', order.order_status || '處理中');
     addRow('付款狀態', order.payment_status);
     addRow('取餐類型', order.order_type);
