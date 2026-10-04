@@ -727,7 +727,30 @@ function submitOrderToGas(data, successCallback, errorCallback) {
 
 function loadProductsAndRules() {
 
-  console.info('[載入診斷] 開始載入流程：storeSettings、catalogRules');
+  console.info('[載入診斷] 開始並行載入：storeSettings、catalogRules、products');
+
+  let catalogRulesReady = false;
+  let productsReady = false;
+  let productsFailed = false;
+  let productsHandled = false;
+  let productsData = null;
+  let productsError = null;
+
+  function finishProductsLoading() {
+    if (productsHandled) return;
+
+    if (productsFailed) {
+      productsHandled = true;
+      onProductsLoadError(productsError);
+      return;
+    }
+
+    if (!catalogRulesReady || !productsReady) return;
+
+    productsHandled = true;
+    console.info('[載入診斷] 分類與商品資料均已完成，開始顯示商品');
+    onProductsLoaded(productsData);
+  }
 
   document.getElementById('loadingState').classList.remove('hidden');
   document.getElementById('errorState').classList.add('hidden');
@@ -840,11 +863,8 @@ function loadProductsAndRules() {
       }
 
 
-      // ------------------------------------------------------
-      // 3. 讀取 Products
-      // ------------------------------------------------------
-
-      loadProductsFromGas();
+      catalogRulesReady = true;
+      finishProductsLoading();
 
     },
 
@@ -856,11 +876,31 @@ function loadProductsAndRules() {
       );
 
 
-      // 分類規則失敗仍然繼續讀取商品
-      loadProductsFromGas();
+      // 分類規則失敗時保留預設分類，仍可顯示商品
+      catalogRulesReady = true;
+      finishProductsLoading();
 
     }
 
+  );
+
+
+  // 商品與分類規則同時讀取；等兩者都完成後才依分類渲染商品
+  loadProductsFromGas(
+    data => {
+      productsData = data;
+      productsReady = true;
+      finishProductsLoading();
+    },
+    error => {
+      console.error(
+        'getProductsForFrontend() 失敗：',
+        error
+      );
+      productsError = error;
+      productsFailed = true;
+      finishProductsLoading();
+    }
   );
 }
 
@@ -869,9 +909,9 @@ function loadProductsAndRules() {
 // 從 GAS 讀取 Products
 // ============================================================
 
-function loadProductsFromGas() {
+function loadProductsFromGas(successCallback, errorCallback) {
 
-  console.info('[載入診斷] catalogRules 已完成，開始載入 products');
+  console.info('[載入診斷] 開始載入 products（與 catalogRules 並行）');
 
   callGasApi(
 
@@ -879,18 +919,19 @@ function loadProductsFromGas() {
 
     data => {
 
-      onProductsLoaded(data);
+      if (typeof successCallback === 'function') {
+        successCallback(data);
+      }
 
     },
 
     error => {
 
-      console.error(
-        'getProductsForFrontend() 失敗：',
-        error
-      );
-
-      onProductsLoadError(error);
+      if (typeof errorCallback === 'function') {
+        errorCallback(error);
+      } else {
+        onProductsLoadError(error);
+      }
 
     }
 
