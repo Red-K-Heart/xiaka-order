@@ -240,6 +240,45 @@
     </div>
   </div>
 
+  <div id="orderQueryModal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl max-h-[90vh] flex flex-col shadow-2xl border-2 border-amber-400 overflow-hidden">
+      <div class="bg-amber-800 text-white p-4 flex justify-between items-center">
+        <h3 class="text-xl font-bold flex items-center gap-2">
+          <i class="fa-solid fa-receipt"></i> 訂單查詢
+        </h3>
+        <button type="button" onclick="closeOrderQuery()" class="text-amber-200 hover:text-white text-2xl font-bold p-1" aria-label="關閉">&times;</button>
+      </div>
+
+      <div class="p-4 overflow-y-auto flex-1 space-y-4">
+        <p class="text-sm text-gray-600">請輸入訂單編號和下單時填寫的完整電話號碼。</p>
+
+        <form id="orderQueryForm" onsubmit="submitOrderQuery(event)" class="space-y-3">
+          <div>
+            <label for="orderQueryId" class="block text-xs font-bold text-gray-600 mb-1">訂單編號</label>
+            <input id="orderQueryId" type="text" autocomplete="off" required placeholder="請輸入訂單編號" class="w-full border border-amber-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
+          </div>
+          <div>
+            <label for="orderQueryPhone" class="block text-xs font-bold text-gray-600 mb-1">下單電話</label>
+            <input id="orderQueryPhone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="請輸入完整電話號碼" class="w-full border border-amber-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
+          </div>
+          <button id="btnOrderQuery" type="submit" class="w-full px-4 py-3 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-black shadow-md">
+            <i class="fa-solid fa-magnifying-glass mr-1"></i> 查詢訂單
+          </button>
+        </form>
+
+        <div id="orderQueryLoading" class="hidden text-center text-amber-800 font-bold py-3">
+          <i class="fa-solid fa-spinner fa-spin mr-2"></i>正在查詢訂單...
+        </div>
+        <p id="orderQueryError" class="hidden rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700 font-bold" role="alert"></p>
+        <div id="orderQueryResult" class="hidden rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3"></div>
+      </div>
+
+      <div class="p-4 bg-white border-t flex justify-end">
+        <button type="button" onclick="closeOrderQuery()" class="px-5 py-2.5 rounded-xl border border-gray-300 text-gray-600 font-bold hover:bg-gray-50">關閉</button>
+      </div>
+    </div>
+  </div>
+
   <script>
 
     // ============================================================
@@ -262,7 +301,7 @@ const GAS_WEB_APP_URL =
 // GitHub Pages → GAS
 // ============================================================
 
-function callGasApi(apiName, successCallback, errorCallback) {
+function callGasApi(apiName, successCallback, errorCallback, queryParams) {
 
   const startedAt = performance.now();
   const timeoutMs = 15000;
@@ -309,10 +348,17 @@ function callGasApi(apiName, successCallback, errorCallback) {
   };
 
   script = document.createElement("script");
+  const extraQuery = Object.entries(queryParams || {})
+    .map(([key, value]) =>
+      "&" + encodeURIComponent(key) + "=" + encodeURIComponent(value)
+    )
+    .join("");
+
   script.src =
     GAS_WEB_APP_URL +
     "?api=" +
     encodeURIComponent(apiName) +
+    extraQuery +
     "&callback=" +
     encodeURIComponent(callbackName);
 
@@ -1748,7 +1794,12 @@ function loadProductsFromGas(successCallback, errorCallback) {
         google.script.run
           .withSuccessHandler(res => {
 
-            alert('訂單已成功送出！感謝您的訂購。');
+            const orderId = res && (res.order_id || res.Order_ID);
+            alert(
+              '訂單已成功送出！感謝您的訂購。' +
+              (orderId ? '\n訂單編號：' + orderId : '') +
+              '\n查詢時請使用此編號和下單電話。'
+            );
 
             if (
               typeof liff !== 'undefined' &&
@@ -1796,8 +1847,11 @@ function loadProductsFromGas(successCallback, errorCallback) {
               result.status === 'success'
             ) {
 
+              const orderId = result.order_id || result.Order_ID;
               alert(
-                '訂單已成功送出！感謝您的訂購。'
+                '訂單已成功送出！感謝您的訂購。' +
+                (orderId ? '\n訂單編號：' + orderId : '') +
+                '\n查詢時請使用此編號和下單電話。'
               );
 
               if (
@@ -1855,9 +1909,164 @@ function loadProductsFromGas(successCallback, errorCallback) {
   // ============================================================
 
   function openOrderQuery() {
+    document.getElementById('orderQueryForm').reset();
+    document.getElementById('orderQueryLoading').classList.add('hidden');
+    document.getElementById('orderQueryError').classList.add('hidden');
+    document.getElementById('orderQueryResult').classList.add('hidden');
+    document.getElementById('btnOrderQuery').disabled = false;
+    document.getElementById('btnOrderQuery').innerHTML =
+      '<i class="fa-solid fa-magnifying-glass mr-1"></i> 查詢訂單';
+    document.getElementById('orderQueryModal').classList.remove('hidden');
+  }
 
-    alert('訂單查詢功能建置中');
 
+  function closeOrderQuery() {
+    document.getElementById('orderQueryModal').classList.add('hidden');
+  }
+
+
+  function submitOrderQuery(event) {
+    event.preventDefault();
+
+    const orderId = document.getElementById('orderQueryId').value.trim();
+    const phone = document.getElementById('orderQueryPhone').value
+      .trim()
+      .replace(/[\s-]/g, '');
+    const errorElement = document.getElementById('orderQueryError');
+
+    errorElement.classList.add('hidden');
+    document.getElementById('orderQueryResult').classList.add('hidden');
+
+    if (!orderId) {
+      showOrderQueryError('請輸入訂單編號。');
+      return;
+    }
+
+    if (!validatePhoneNumber(phone)) {
+      showOrderQueryError('請輸入正確的完整電話號碼。');
+      return;
+    }
+
+    const button = document.getElementById('btnOrderQuery');
+    button.disabled = true;
+    button.textContent = '查詢中...';
+    document.getElementById('orderQueryLoading').classList.remove('hidden');
+
+    callGasApi(
+      'orderStatus',
+      result => {
+        document.getElementById('orderQueryLoading').classList.add('hidden');
+        button.disabled = false;
+        button.innerHTML =
+          '<i class="fa-solid fa-magnifying-glass mr-1"></i> 查詢訂單';
+
+        if (!result || result.status !== 'success') {
+          showOrderQueryError(
+            result && result.message
+              ? result.message
+              : '查詢失敗，請確認資料後再試一次。'
+          );
+          return;
+        }
+
+        renderOrderQueryResult(result);
+      },
+      error => {
+        document.getElementById('orderQueryLoading').classList.add('hidden');
+        button.disabled = false;
+        button.innerHTML =
+          '<i class="fa-solid fa-magnifying-glass mr-1"></i> 查詢訂單';
+        showOrderQueryError(
+          error && error.message
+            ? error.message
+            : '目前無法連線，請稍後再試。'
+        );
+      },
+      { orderId, phone }
+    );
+  }
+
+
+  function showOrderQueryError(message) {
+    const errorElement = document.getElementById('orderQueryError');
+    errorElement.textContent = String(message || '查詢失敗，請稍後再試。');
+    errorElement.classList.remove('hidden');
+  }
+
+
+  function renderOrderQueryResult(order) {
+    const container = document.getElementById('orderQueryResult');
+    container.textContent = '';
+
+    const title = document.createElement('h4');
+    title.className = 'text-lg font-black text-amber-950';
+    title.textContent = '訂單資訊';
+    container.appendChild(title);
+
+    function addRow(label, value) {
+      if (value === undefined || value === null || String(value).trim() === '') {
+        return;
+      }
+      const row = document.createElement('div');
+      row.className = 'flex justify-between gap-3 border-b border-amber-200 py-1.5 text-sm';
+      const labelElement = document.createElement('span');
+      labelElement.className = 'shrink-0 text-gray-600';
+      labelElement.textContent = label;
+      const valueElement = document.createElement('span');
+      valueElement.className = 'text-right font-bold text-gray-800 break-all';
+      valueElement.textContent = String(value);
+      row.append(labelElement, valueElement);
+      container.appendChild(row);
+    }
+
+    addRow('訂單編號', order.order_id);
+    addRow('訂單狀態', order.order_status || '處理中');
+    addRow('付款狀態', order.payment_status);
+    addRow('訂購人', order.customer_name);
+    addRow('取餐日期', order.pickup_date);
+    addRow('取餐時段', order.pickup_time_slot);
+    addRow('訂單時間', order.order_time);
+    addRow(
+      '訂單金額',
+      '$' + (Number(order.total_amount) || 0).toLocaleString('zh-TW')
+    );
+    addRow('備註', order.remarks);
+
+    const itemsTitle = document.createElement('h5');
+    itemsTitle.className = 'pt-2 font-extrabold text-amber-950';
+    itemsTitle.textContent = '商品明細';
+    container.appendChild(itemsTitle);
+
+    const items = Array.isArray(order.items) ? order.items : [];
+    if (items.length === 0) {
+      const emptyItems = document.createElement('p');
+      emptyItems.className = 'text-sm text-gray-500';
+      emptyItems.textContent = '目前沒有商品明細。';
+      container.appendChild(emptyItems);
+    } else {
+      const list = document.createElement('div');
+      list.className = 'divide-y divide-amber-200';
+      items.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'flex justify-between gap-3 py-2 text-sm';
+        const name = document.createElement('span');
+        name.className = 'font-bold text-gray-800';
+        name.textContent =
+          String(item.item_name || item.product_id || '商品') +
+          (item.is_gift ? '（贈品）' : '') +
+          ' × ' +
+          (Number(item.quantity) || 0);
+        const subtotal = document.createElement('span');
+        subtotal.className = 'shrink-0 text-gray-700';
+        subtotal.textContent =
+          '$' + (Number(item.subtotal) || 0).toLocaleString('zh-TW');
+        row.append(name, subtotal);
+        list.appendChild(row);
+      });
+      container.appendChild(list);
+    }
+
+    container.classList.remove('hidden');
   }
 
   </script>
