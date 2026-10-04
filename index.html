@@ -2022,10 +2022,34 @@ function loadProductsFromGas(successCallback, errorCallback) {
     addRow('訂單編號', order.order_id);
     addRow('訂單狀態', order.order_status || '處理中');
     addRow('付款狀態', order.payment_status);
+    addRow('取餐類型', order.order_type);
     addRow('訂購人', order.customer_name);
     addRow('取餐日期', order.pickup_date);
     addRow('取餐時段', order.pickup_time_slot);
     addRow('訂單時間', order.order_time);
+    addRow('胡椒鹽', order.overall_pepper);
+    addRow('辣椒粉', order.overall_chili_powder);
+    addRow('辣醬', order.overall_chili_sauce);
+    addRow('蔬菜分裝', order.veg_separate);
+
+    const extraPacks = [
+      ['胡椒鹽包', order.extra_pepper_pack],
+      ['辣椒粉包', order.extra_chili_pack],
+      ['辣醬包', order.extra_sauce_pack]
+    ]
+      .filter(([label, quantity]) => Number(quantity) > 0)
+      .map(([label, quantity]) => label + ' ' + quantity + ' 包');
+    if (extraPacks.length > 0) {
+      addRow('加購醬包', extraPacks.join('、'));
+    }
+
+    if (Number(order.discount_amount) > 0) {
+      addRow(
+        '折扣金額',
+        '$' + Number(order.discount_amount).toLocaleString('zh-TW')
+      );
+    }
+    addRow('優惠碼', order.promo_code_used);
     addRow(
       '訂單金額',
       '$' + (Number(order.total_amount) || 0).toLocaleString('zh-TW')
@@ -2049,6 +2073,8 @@ function loadProductsFromGas(successCallback, errorCallback) {
       items.forEach(item => {
         const row = document.createElement('div');
         row.className = 'flex justify-between gap-3 py-2 text-sm';
+        const description = document.createElement('div');
+        description.className = 'flex min-w-0 flex-col';
         const name = document.createElement('span');
         name.className = 'font-bold text-gray-800';
         name.textContent =
@@ -2056,11 +2082,16 @@ function loadProductsFromGas(successCallback, errorCallback) {
           (item.is_gift ? '（贈品）' : '') +
           ' × ' +
           (Number(item.quantity) || 0);
+        const unitPrice = document.createElement('span');
+        unitPrice.className = 'text-xs text-gray-500';
+        unitPrice.textContent =
+          '單價 $' + (Number(item.unit_price) || 0).toLocaleString('zh-TW');
         const subtotal = document.createElement('span');
         subtotal.className = 'shrink-0 text-gray-700';
         subtotal.textContent =
           '$' + (Number(item.subtotal) || 0).toLocaleString('zh-TW');
-        row.append(name, subtotal);
+        description.append(name, unitPrice);
+        row.append(description, subtotal);
         list.appendChild(row);
       });
       container.appendChild(list);
