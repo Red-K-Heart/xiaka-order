@@ -251,13 +251,16 @@
       const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
       const STORAGE_KEY = 'xiaka-operator-demo-v1';
       const GOOGLE_CLIENT_ID = '384565693899-acvihnpcsrtpllgoi5kf9b9amks3tb1m.apps.googleusercontent.com';
-      const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzvNQOzzm16906irmZtSA_3mfWO2GDWqZSjTVEMa3Ao5A638n-JdfrRYov197A_DM1TOA/exec';
+      const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzhJjRbPpSoad-yC4CWKBepUWLTs36aZytQgmBhhqVMHyzeUgGJByOK0jxlh8EpsAis/exec';
       const roleSelect = $('#roleSelect');
       const authFrame = document.createElement('iframe');
       authFrame.name = 'operatorAuthFrame'; authFrame.title = 'Google 登入驗證'; authFrame.hidden = true; document.body.appendChild(authFrame);
       let pendingAuthState = '';
       let authTimeout;
       let signedInOperator = null;
+      let operatorCredential = '';
+      let readOnlyData = null;
+      const pendingOperatorReads = new Map();
       const now = new Date();
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
       const dateText = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', weekday: 'long', month: 'numeric', day: 'numeric' }).format(now);
@@ -281,7 +284,7 @@
       let toastTimer;
       let cancelArmed = new Set();
 
-      function saveLocal() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+      function saveLocal() { if (!readOnlyData) localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
       function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
       }
@@ -293,6 +296,41 @@
         const bytes = new Uint8Array(24); crypto.getRandomValues(bytes);
         return [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
       }
+      function requestOperatorSnapshot() {
+        const state = makeAuthState();
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            pendingOperatorReads.delete(state);
+            reject(new Error('讀取資料逾時，請重新登入後再試'));
+          }, 20000);
+          pendingOperatorReads.set(state, { resolve, reject, timeout });
+          const form = document.createElement('form');
+          form.method = 'POST'; form.action = GAS_WEB_APP_URL; form.target = authFrame.name; form.hidden = true;
+          const addField = (name, value) => { const field = document.createElement('input'); field.type = 'hidden'; field.name = name; field.value = value; form.appendChild(field); };
+          addField('operatorRead', '1');
+          addField('payload', JSON.stringify({ action: 'readSnapshot', credential: operatorCredential, state }));
+          document.body.appendChild(form); form.submit(); form.remove();
+        });
+      }
+      async function loadOperatorSnapshot() {
+        readOnlyData = { loading: true };
+        data.orders = []; data.settings = {}; data.settlements = {};
+        renderOrders(); renderSettings(); renderSettlement();
+        $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・讀取中`;
+        try {
+          const response = await requestOperatorSnapshot();
+          readOnlyData = response.data;
+          data.orders = Array.isArray(response.data.orders) ? response.data.orders : [];
+          data.settings = {};
+          data.settlements = response.data.settlements || {};
+          $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・唯讀已連線`;
+          renderOrders(); renderSettings(); renderSettlement();
+          showToast(`已讀取 ${data.orders.length} 筆訂單與 ${(response.data.products || []).length} 項商品`);
+        } catch (error) {
+          $('#authUserStatus').textContent = `登入成功，資料讀取失敗：${error.message}`;
+          showToast('作業資料讀取失敗，請檢查測試 GAS 部署與 Staff_Accounts');
+        }
+      }
       function showAuthError(message) {
         clearTimeout(authTimeout); pendingAuthState = '';
         $('#authUserStatus').textContent = message;
@@ -300,6 +338,10 @@
       }
       function handleGoogleCredential(response) {
         if (!response?.credential) { showAuthError('未取得 Google 登入憑證'); return; }
+        if (!GAS_WEB_APP_URL.startsWith('https://script.google.com/macros/s/') || !GAS_WEB_APP_URL.endsWith('/exec')) {
+          showAuthError('請先設定測試用 GAS /exec 網址'); return;
+        }
+        operatorCredential = response.credential;
         pendingAuthState = makeAuthState();
         $('#authUserStatus').textContent = '正在由 GAS 驗證帳號與角色…';
         $('#googleSignIn').hidden = true;
@@ -325,6 +367,14 @@
       window.addEventListener('message', event => {
         if (event.source !== authFrame.contentWindow || event.origin !== 'https://script.google.com' && !event.origin.endsWith('.googleusercontent.com')) return;
         const message = event.data;
+        if (message?.type === 'XIAKA_OPERATOR_READ') {
+          const pending = pendingOperatorReads.get(message.state);
+          if (!pending) return;
+          clearTimeout(pending.timeout); pendingOperatorReads.delete(message.state);
+          if (message.result?.success && message.result.data) pending.resolve(message.result);
+          else pending.reject(new Error(message.result?.message || 'GAS 拒絕讀取資料'));
+          return;
+        }
         if (!message || message.type !== 'XIAKA_OPERATOR_AUTH' || message.state !== pendingAuthState) return;
         clearTimeout(authTimeout); pendingAuthState = '';
         if (!message.result?.success || !message.result.user) {
@@ -337,7 +387,7 @@
         roleSelect.value = signedInOperator.role; roleSelect.disabled = true;
         $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}`;
         $('#authSignOut').hidden = false;
-        renderSettings(); renderSettlement();
+        loadOperatorSnapshot();
       });
       function showToast(message) {
         const toast = $('#toast'); toast.textContent = message; toast.hidden = false;
@@ -364,10 +414,11 @@
             ${order.items.map(item => `<div class="item-row"><span>${escapeHtml(item)}</span></div>`).join('')}
             <div class="item-row total-row"><span>${escapeHtml(order.payment)}</span><span>金額 ${money(order.amount)}</span></div>
             <details><summary>查看完整資料</summary><div class="detail-body"><div>下單時間：${escapeHtml(order.orderTime)}</div><div>取餐日期：${escapeHtml(order.pickupDate)}</div><div>電話：${escapeHtml(order.phone)}</div><div>備註：${escapeHtml(order.remarks || '無')}</div></div></details>
-            <div class="action-row">${order.status === 'pending' ? `<button class="btn primary" data-action="prepare" data-id="${escapeHtml(order.id)}">開始準備</button>` : ''}${order.status === 'preparing' ? `<button class="btn primary" data-action="complete" data-id="${escapeHtml(order.id)}">標示已完成</button>` : ''}${order.status !== 'cancelled' ? `<button class="btn" data-action="edit" data-id="${escapeHtml(order.id)}">修改訂單</button><button class="btn danger" data-action="cancel" data-id="${escapeHtml(order.id)}">${cancelArmed.has(order.id) ? '再按一次確認取消' : '取消訂單'}</button>` : ''}</div>
+            <div class="action-row">${readOnlyData ? '<span class="muted">試算表唯讀</span>' : `${order.status === 'pending' ? `<button class="btn primary" data-action="prepare" data-id="${escapeHtml(order.id)}">開始準備</button>` : ''}${order.status === 'preparing' ? `<button class="btn primary" data-action="complete" data-id="${escapeHtml(order.id)}">標示已完成</button>` : ''}${order.status !== 'cancelled' ? `<button class="btn" data-action="edit" data-id="${escapeHtml(order.id)}">修改訂單</button><button class="btn danger" data-action="cancel" data-id="${escapeHtml(order.id)}">${cancelArmed.has(order.id) ? '再按一次確認取消' : '取消訂單'}</button>` : ''}`}</div>
           </article>`).join('');
       }
       function setOrderStatus(id, status) {
+        if (readOnlyData) return showToast('目前為唯讀連線，尚未開放訂單寫入');
         const order = data.orders.find(item => item.id === id); if (!order) return;
         const before = { status: order.status };
         order.status = status;
@@ -375,12 +426,25 @@
         saveLocal(); renderOrders(); showToast(`示意訂單已更新為「${statusLabel[status]}」`);
       }
       function openEdit(id) {
+        if (readOnlyData) return showToast('目前為唯讀連線，尚未開放訂單修改');
         const order = data.orders.find(item => item.id === id); if (!order) return;
         $('#editOrderId').value = id; $('#editPickupDate').value = order.pickupDate; $('#editPickupTime').value = order.pickupTime;
         $('#editName').value = order.name; $('#editPhone').value = order.phone; $('#editItems').value = order.items.join('\n');
         $('#editAmount').value = order.amount; $('#editRemarks').value = order.remarks || ''; $('#editDialog').showModal();
       }
       function getDaySettings(day) {
+        if (readOnlyData) {
+          const source = readOnlyData.settings || {};
+          const calendarDay = (readOnlyData.businessCalendar || []).find(item => item.date === day) || {};
+          return {
+            closed: calendarDay.closed ?? !!source.closed,
+            openTime: calendarDay.openTime || source.openTime || '',
+            closeTime: calendarDay.closeTime || source.closeTime || '',
+            note: calendarDay.note || source.note || '',
+            slots: (readOnlyData.pickupSlots || []).filter(slot => !slot.date || slot.date === day),
+            stock: readOnlyData.products || []
+          };
+        }
         if (!data.settings[day]) data.settings[day] = JSON.parse(JSON.stringify(sample.settings[today]));
         return data.settings[day];
       }
@@ -388,24 +452,24 @@
         const day = $('#settingDate').value || today, settings = getDaySettings(day);
         $('#closedToggle').checked = !!settings.closed; $('#openTime').value = settings.openTime || '16:00';
         $('#closeTime').value = settings.closeTime || '21:30'; $('#specialNote').value = settings.note || '';
-        $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${canManageSchedule() ? '' : 'disabled'}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('');
-        $('#stockList').innerHTML = settings.stock.map((item,index) => `<div class="stock-row"><div><div class="stock-name">${escapeHtml(item.name)}</div><div class="stock-sub">${item.quantity === 0 ? '庫存售完' : '可售數量'}</div></div><input class="qty-input" type="number" min="0" step="1" value="${Number(item.quantity) || 0}" data-qty="${index}" aria-label="${escapeHtml(item.name)}可售數量"><label class="switch-label"><input type="checkbox" data-hidden="${index}" ${item.manualHidden ? 'checked' : ''}>手動下架</label></div>`).join('');
-        ['closedToggle','openTime','closeTime','specialNote'].forEach(id => { $('#'+id).disabled = !canManageSchedule(); });
-        $('#saveSettings').disabled = false;
+        $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${readOnlyData || !canManageSchedule() ? 'disabled' : ''}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('') || (readOnlyData ? '<div class="empty">試算表尚無取餐時段資料</div>' : '');
+        $('#stockList').innerHTML = settings.stock.map((item,index) => `<div class="stock-row"><div><div class="stock-name">${escapeHtml(item.name)}</div><div class="stock-sub">${item.quantity === 0 ? '庫存售完' : '可售數量'}</div></div><input class="qty-input" type="number" min="0" step="1" value="${Number(item.quantity) || 0}" data-qty="${index}" aria-label="${escapeHtml(item.name)}可售數量" ${readOnlyData ? 'disabled' : ''}><label class="switch-label"><input type="checkbox" data-hidden="${index}" ${item.manualHidden ? 'checked' : ''} ${readOnlyData ? 'disabled' : ''}>手動下架</label></div>`).join('');
+        ['closedToggle','openTime','closeTime','specialNote'].forEach(id => { $('#'+id).disabled = !!readOnlyData || !canManageSchedule(); });
+        $('#saveSettings').disabled = !!readOnlyData;
       }
       function renderSettlement() {
         const day = $('#settlementDate').value || today;
         const record = data.settlements[day];
         $('#settlementBadge').textContent = record ? ({ draft: '草稿', closed: '已結算', reopened: '已重開' }[record.status] || '草稿') : '尚未建立';
         $('#settlementBadge').className = 'badge ' + (record?.status === 'closed' ? 'completed' : 'pending');
-        $('#reopenSettlement').hidden = !(record?.status === 'closed' && canClose());
-        $('#closeSettlement').disabled = !canClose() || record?.status === 'closed';
-        $('#saveDraft').disabled = record?.status === 'closed';
-        $('#settlementMeta').textContent = record ? `最後儲存：${record.updatedAt ? new Date(record.updatedAt).toLocaleString('zh-TW') : '—'} ・操作人：${record.actor || '—'}` : '建立人員與時間會在示意資料中記錄。';
+        $('#reopenSettlement').hidden = !!readOnlyData || !(record?.status === 'closed' && canClose());
+        $('#closeSettlement').disabled = !!readOnlyData || !canClose() || record?.status === 'closed';
+        $('#saveDraft').disabled = !!readOnlyData || record?.status === 'closed';
+        $('#settlementMeta').textContent = record ? `最後儲存：${record.updatedAt ? new Date(record.updatedAt).toLocaleString('zh-TW') : '—'} ・操作人：${record.actor || '—'}` : (readOnlyData ? '此日期尚無結算資料。' : '建立人員與時間會在示意資料中記錄。');
         const settings = getDaySettings(day);
         const inventoryCounts = record?.inventoryCounts || {};
         $('#settlementInventoryList').innerHTML = settings.stock.length
-          ? settings.stock.map(item => `<div class="count-row"><span class="stock-name">${escapeHtml(item.name)}</span><span class="count-current">登記 ${Number(item.quantity) || 0}</span><input class="count-input" type="number" min="0" step="1" inputmode="numeric" placeholder="盤點數量" data-counted-stock="${escapeHtml(item.id)}" value="${inventoryCounts[item.id] ?? ''}" aria-label="${escapeHtml(item.name)}實際盤點數量" ${record?.status === 'closed' ? 'disabled' : ''}></div>`).join('')
+          ? settings.stock.map(item => `<div class="count-row"><span class="stock-name">${escapeHtml(item.name)}</span><span class="count-current">登記 ${Number(item.quantity) || 0}</span><input class="count-input" type="number" min="0" step="1" inputmode="numeric" placeholder="盤點數量" data-counted-stock="${escapeHtml(item.id)}" value="${inventoryCounts[item.id] ?? ''}" aria-label="${escapeHtml(item.name)}實際盤點數量" ${readOnlyData || record?.status === 'closed' ? 'disabled' : ''}></div>`).join('')
           : '<div class="empty">此日期沒有商品資料</div>';
         if (record) {
           $('#cashSales').value = record.cashSales ?? ''; $('#floatAmount').value = record.floatAmount ?? '';
@@ -414,8 +478,10 @@
         } else {
           ['cashSales','floatAmount','countedCash','expenseAmount','wasteAmount','settlementNote'].forEach(id => { $('#'+id).value = ''; });
         }
+        ['cashSales','floatAmount','countedCash','expenseAmount','wasteAmount','settlementNote'].forEach(id => { $('#'+id).disabled = !!readOnlyData; });
       }
       function saveSettlement(status) {
+        if (readOnlyData) return showToast('目前為唯讀連線，尚未開放結算寫入');
         const day = $('#settlementDate').value;
         const old = data.settlements[day] || {};
         const inventoryCounts = {};
@@ -444,7 +510,7 @@
       });
       $('#closeEdit').addEventListener('click', () => $('#editDialog').close()); $('#cancelEdit').addEventListener('click', () => $('#editDialog').close());
       $('#editForm').addEventListener('submit', event => {
-        event.preventDefault(); const order = data.orders.find(item => item.id === $('#editOrderId').value); if (!order) return;
+        event.preventDefault(); if (readOnlyData) return showToast('目前為唯讀連線，尚未開放訂單修改'); const order = data.orders.find(item => item.id === $('#editOrderId').value); if (!order) return;
         if (!confirm('確認修改訂單資料與金額？')) return;
         const before = JSON.parse(JSON.stringify(order));
         Object.assign(order, { pickupDate: $('#editPickupDate').value, pickupTime: $('#editPickupTime').value.trim(), name: $('#editName').value.trim(), phone: $('#editPhone').value.trim(), items: $('#editItems').value.split('\n').map(s => s.trim()).filter(Boolean), amount: Number($('#editAmount').value) || 0, remarks: $('#editRemarks').value.trim() });
@@ -454,10 +520,11 @@
       $('#settingDate').value = today; $('#settlementDate').value = today; $('#orderDate').value = today;
       $('#settingDate').addEventListener('change', renderSettings);
       $('#slotList').addEventListener('click', event => {
-        const button = event.target.closest('[data-slot]'); if (!button || !canManageSchedule()) return;
+        const button = event.target.closest('[data-slot]'); if (!button || readOnlyData || !canManageSchedule()) return;
         const settings = getDaySettings($('#settingDate').value); settings.slots[Number(button.dataset.slot)].enabled = !settings.slots[Number(button.dataset.slot)].enabled; renderSettings(); saveLocal();
       });
       $('#saveSettings').addEventListener('click', () => {
+        if (readOnlyData) return showToast('目前為唯讀連線，尚未開放設定寫入');
         const day = $('#settingDate').value, settings = getDaySettings(day);
         const oldStock = JSON.parse(JSON.stringify(settings.stock));
         settings.closed = $('#closedToggle').checked; settings.openTime = $('#openTime').value; settings.closeTime = $('#closeTime').value; settings.note = $('#specialNote').value.trim();
@@ -469,7 +536,8 @@
       });
       $('#settlementDate').addEventListener('change', renderSettlement);
       $('#authSignOut').addEventListener('click', () => {
-        signedInOperator = null; roleSelect.disabled = false; roleSelect.value = '店長';
+        signedInOperator = null; operatorCredential = ''; readOnlyData = null; data = JSON.parse(JSON.stringify(sample));
+        roleSelect.disabled = false; roleSelect.value = '店長';
         if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
         $('#authUserStatus').textContent = '已登出 Google'; $('#googleSignIn').hidden = false; $('#authSignOut').hidden = true;
         renderSettings(); renderSettlement();
@@ -477,7 +545,7 @@
       $('#saveDraft').addEventListener('click', () => saveSettlement('draft'));
       $('#closeSettlement').addEventListener('click', () => { if (canClose() && confirm('確認完成這一天的結算？')) saveSettlement('closed'); });
       $('#reopenSettlement').addEventListener('click', () => {
-        if (!canClose() || !confirm('確認重開已完成的結算？')) return;
+        if (readOnlyData || !canClose() || !confirm('確認重開已完成的結算？')) return;
         const record = data.settlements[$('#settlementDate').value]; if (record) { record.status = 'reopened'; record.actor = role(); record.updatedAt = new Date().toISOString(); saveLocal(); renderSettlement(); showToast('示意結算已重開'); }
       });
       roleSelect.addEventListener('change', () => { renderSettings(); renderSettlement(); showToast(`展示角色已切換為「${role()}」`); });
