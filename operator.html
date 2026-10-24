@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#713b24">
+  <title>呷喀｜現場作業</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #1b140f;
+      --surface: #251b14;
+      --surface-soft: #362519;
+      --line: #674728;
+      --text: #f3c88f;
+      --muted: #c9a16d;
+      --brand: #e98728;
+      --brand-deep: #24170f;
+      --header-bg: #713b24;
+      --brand-fg: #fff4e5;
+      --header-muted: #e7b875;
+      --header-line: rgba(231,184,117,.34);
+      --header-fill: rgba(231,184,117,.09);
+      --ring: #f2a544;
+      --good: #8fd0a6;
+      --good-bg: #20372a;
+      --warn: #f0ca79;
+      --warn-bg: #403219;
+      --danger: #f1a196;
+      --danger-bg: #43231f;
+      --danger-line: #7a4036;
+      --shadow: 0 10px 28px rgba(0,0,0,.25);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; padding-bottom: 30px; background: var(--bg); }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+    .app-header { background: var(--header-bg); color: var(--brand-fg); padding: max(16px, env(safe-area-inset-top)) 18px 15px; }
+    .header-inner, .header-line, .toolbar, .order-title, .order-meta, .item-row, .field-inline, .setting-row, .section-title, .sync-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .header-inner { max-width: 720px; margin: 0 auto; }
+    .brand-name { margin: 0; font-size: 19px; font-weight: 750; letter-spacing: .02em; }
+    .date-line { display: flex; align-items: center; gap: 8px; margin-top: 3px; color: var(--header-muted); font-size: 13px; }
+    .role-select { min-height: 42px; max-width: 156px; padding: 8px 10px; border: 1px solid var(--header-line); border-radius: 12px; color: inherit; background: var(--header-fill); }
+    .role-select option { color: var(--text); background: var(--surface); }
+    .sync-line { max-width: 720px; margin: 12px auto 0; justify-content: flex-start; color: var(--header-muted); font-size: 12px; }
+    .auth-line { max-width: 720px; min-height: 42px; margin: 8px auto 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--header-muted); font-size: 12px; }
+    .auth-controls { display: flex; align-items: center; gap: 8px; }
+    .auth-user { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @media (max-width: 420px) { .auth-line { align-items: flex-start; flex-direction: column; } .auth-user { max-width: 100%; } }
+    .sync-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: #79c491; }
+    .demo-ribbon { max-width: 720px; margin: 12px auto 0; padding: 9px 11px; border: 1px solid var(--header-line); border-radius: 10px; background: var(--header-fill); color: inherit; font-size: 12px; }
+    .tabbar { display: grid; grid-template-columns: repeat(3,1fr); gap: 4px; max-width: 720px; margin: 0 auto; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--line); }
+    .tab { min-height: 46px; border: 0; border-radius: 12px; color: var(--muted); background: transparent; font-weight: 650; }
+    .tab[aria-selected="true"] { color: var(--brand-fg); background: var(--brand); }
+    main { width: min(100% - 24px, 680px); margin: 0 auto; padding: 18px 0 32px; }
+    .panel[hidden] { display: none; }
+    .section-title { margin: 2px 0 12px; align-items: baseline; }
+    h2 { margin: 0; font-size: 20px; line-height: 1.3; }
+    h3 { margin: 0 0 10px; font-size: 16px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .toolbar { margin: 12px 0; align-items: stretch; }
+    .search-wrap { flex: 1; min-width: 0; }
+    .input, .select, .textarea { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: var(--surface); }
+    .textarea { min-height: 82px; resize: vertical; }
+    .date-filter { width: 145px; }
+    .chips { display: flex; gap: 7px; overflow-x: auto; padding: 2px 0 12px; }
+    .chip { flex: 0 0 auto; min-height: 40px; padding: 8px 13px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--surface); }
+    .chip.active { border-color: var(--brand); color: var(--brand-fg); background: var(--brand); }
+    .chip-count { display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; margin-left: 5px; border-radius: 50%; color: #fff; background: #168f8b; font-size: 12px; font-weight: 700; line-height: 1; vertical-align: middle; }
+    .order-list { display: grid; gap: 11px; }
+    .order-card { padding: 15px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
+    .order-title { align-items: flex-start; }
+    .order-code { font-weight: 750; font-size: 16px; }
+    .badge { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .badge.pending { color: var(--warn); background: var(--warn-bg); }
+    .badge.preparing { color: var(--brand-fg); background: var(--brand); }
+    .badge.completed { color: var(--good); background: var(--good-bg); }
+    .badge.cancelled { color: var(--danger); background: var(--danger-bg); }
+    .order-meta { justify-content: flex-start; flex-wrap: wrap; margin: 8px 0 10px; color: var(--muted); font-size: 13px; }
+    .item-row { margin: 5px 0; font-size: 14px; }
+    .item-row span:last-child { white-space: nowrap; }
+    .total-row { margin-top: 10px; padding-top: 9px; border-top: 1px dashed var(--line); font-weight: 700; }
+    details { margin-top: 11px; }
+    summary { min-height: 40px; display: flex; align-items: center; color: var(--brand); font-weight: 650; cursor: pointer; }
+    .detail-body { padding-top: 6px; color: var(--muted); font-size: 13px; }
+    .action-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .btn { min-height: 44px; padding: 9px 13px; border: 1px solid var(--brand); border-radius: 12px; color: var(--brand-fg); background: var(--brand); font-weight: 650; }
+    .btn.primary { border-color: var(--brand); color: var(--brand-fg); background: var(--brand); }
+    .btn.danger { border-color: var(--danger-line); color: var(--danger); background: var(--danger-bg); }
+    .btn:disabled { cursor: not-allowed; opacity: .52; }
+    .btn.full { width: 100%; }
+    .empty { padding: 30px 16px; border: 1px dashed var(--line); border-radius: 15px; color: var(--muted); text-align: center; background: color-mix(in srgb, var(--surface) 45%, transparent); }
+    .section { margin-top: 17px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
+    .field { display: grid; gap: 6px; min-width: 0; margin: 11px 0; }
+    .field label { font-size: 13px; font-weight: 700; }
+    .field-inline { align-items: flex-end; }
+    .field-inline .field { flex: 1; }
+    .switch-row { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+    .switch-row input { width: 21px; height: 21px; accent-color: var(--brand); }
+    .slot-row, .stock-row, .amount-row { display: grid; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding: 10px 0; }
+    .slot-row { grid-template-columns: 1fr auto; }
+    .stock-row { grid-template-columns: minmax(0,1fr) 94px auto; }
+    .count-row { display: grid; grid-template-columns: minmax(0,1fr) auto 104px; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding: 10px 0; }
+    .count-current { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .count-input { width: 104px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; text-align: center; background: var(--surface); }
+    .stock-name { font-weight: 650; }
+    .stock-sub { margin-top: 2px; color: var(--muted); font-size: 12px; }
+    .qty-input { width: 94px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; text-align: center; background: var(--surface); }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { width: 24px; height: 38px; transform: scale(1.35); transform-origin: center; opacity: 1; }
+    .switch-label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+    .switch-label input { width: 18px; height: 18px; accent-color: var(--brand); }
+    .closed-note, .status-note { margin-top: 12px; padding: 11px 12px; border-radius: 11px; color: var(--muted); background: var(--surface-soft); font-size: 13px; }
+    .amount-row { grid-template-columns: 1fr 1fr; padding: 0; border: 0; }
+    .amount-row .field { margin-bottom: 2px; }
+    .audit-list { display: grid; gap: 8px; margin-top: 12px; }
+    .audit-entry { padding: 10px 0; border-top: 1px solid var(--line); font-size: 13px; }
+    dialog { width: min(480px, calc(100% - 24px)); max-height: 90dvh; padding: 0; overflow: auto; border: 1px solid var(--line); border-radius: 18px; color: var(--text); background: var(--surface); box-shadow: 0 20px 60px rgba(30,20,10,.28); }
+    dialog::backdrop { background: rgba(30,20,10,.55); }
+    .dialog-head { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 17px; color: var(--brand-fg); background: var(--brand-deep); }
+    .dialog-head h2 { font-size: 17px; }
+    .dialog-content { padding: 16px; }
+    .dialog-actions { display: flex; gap: 8px; margin-top: 14px; }
+    .toast { position: fixed; z-index: 20; left: 50%; bottom: 18px; width: min(460px, calc(100% - 28px)); transform: translateX(-50%); padding: 12px 15px; border-radius: 12px; color: var(--brand-fg); background: var(--brand-deep); box-shadow: var(--shadow); }
+    .toast[hidden] { display: none; }
+    @media (min-width: 760px) {
+      main { padding-top: 22px; }
+      .order-list { grid-template-columns: 1fr 1fr; align-items: start; }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div>
+        <h1 class="brand-name">呷喀｜現場作業</h1>
+        <div class="date-line"><span id="todayLabel"></span><time id="currentTime" aria-label="目前時間"></time></div>
+      </div>
+      <label class="sr-only" for="roleSelect">展示角色</label>
+      <select id="roleSelect" class="role-select" aria-label="展示角色">
+        <option value="系統管理員">系統管理員</option>
+        <option value="店長" selected>店長</option>
+        <option value="員工">員工</option>
+      </select>
+    </div>
+    <div class="sync-line"><span class="sync-dot" aria-hidden="true"></span><span>示意模式・資料只存在這個瀏覽器</span></div>
+    <div class="auth-line"><span class="auth-user" id="authUserStatus" aria-live="polite">尚未登入 Google</span><div class="auth-controls"><div id="googleSignIn"></div><button class="btn" id="authSignOut" type="button" hidden>登出</button></div></div>
+    <div class="demo-ribbon">尚未連接 Google 登入或正式試算表。此頁變更不會影響正式訂單。</div>
+  </header>
+
+  <nav class="tabbar" role="tablist" aria-label="現場作業功能">
+    <button class="tab" id="ordersTab" role="tab" aria-controls="ordersPanel" aria-selected="true" type="button">訂單</button>
+    <button class="tab" id="settingsTab" role="tab" aria-controls="settingsPanel" aria-selected="false" type="button">設定</button>
+    <button class="tab" id="settlementTab" role="tab" aria-controls="settlementPanel" aria-selected="false" type="button">結算</button>
+  </nav>
+
+  <main>
+    <section class="panel" id="ordersPanel" role="tabpanel" aria-labelledby="ordersTab">
+      <div class="section-title"><h2>訂單管理</h2><span class="muted" id="orderCount"></span></div>
+      <div class="toolbar">
+        <div class="search-wrap"><label class="sr-only" for="orderSearch">搜尋訂單</label><input class="input" id="orderSearch" type="search" placeholder="訂單編號、姓名或電話" autocomplete="off"></div>
+        <div class="date-filter"><label class="sr-only" for="orderDate">依取餐日期篩選</label><input class="input" id="orderDate" type="date"></div>
+      </div>
+      <div class="chips" role="group" aria-label="訂單狀態篩選">
+        <button class="chip active" type="button" data-filter="unfinished"><span>未完成</span><span class="chip-count" id="unfinishedCount" aria-label="未完成訂單數量">0</span></button>
+        <button class="chip" type="button" data-filter="completed">已完成</button>
+        <button class="chip" type="button" data-filter="cancelled">已取消</button>
+        <button class="chip" type="button" data-filter="all">全部</button>
+      </div>
+      <div class="order-list" id="orderList" aria-live="polite"></div>
+    </section>
+
+    <section class="panel" id="settingsPanel" role="tabpanel" aria-labelledby="settingsTab" hidden>
+      <div class="section-title"><h2>營業與庫存設定</h2><span class="muted">依日期設定</span></div>
+      <div class="section">
+        <div class="field"><label for="settingDate">設定日期</label><input class="input" id="settingDate" type="date"></div>
+        <label class="switch-row"><span>當日休息，不接受新訂單</span><input id="closedToggle" type="checkbox"></label>
+        <div class="field-inline">
+          <div class="field"><label for="openTime">可訂餐開始時間</label><input class="input" id="openTime" type="time" value="16:00"></div>
+          <div class="field"><label for="closeTime">可訂餐結束時間</label><input class="input" id="closeTime" type="time" value="21:30"></div>
+        </div>
+        <div class="field"><label for="specialNote">特殊營業日備註</label><input class="input" id="specialNote" placeholder="選填"></div>
+        <div class="status-note">停用取餐時段只會阻止新訂單，既有訂單保留原時段。</div>
+      </div>
+      <div class="section">
+        <div class="section-title"><h3>可取餐時段</h3><span class="muted">示意時段</span></div>
+        <div id="slotList"></div>
+      </div>
+      <div class="section">
+        <div class="section-title"><h3>商品可售數量</h3><span class="muted">已扣除預訂</span></div>
+        <div id="stockList"></div>
+        <div class="field"><label for="stockReason">庫存異動原因</label><input class="input" id="stockReason" placeholder="例如：補貨、盤點調整"></div>
+        <p class="muted">數量歸零會標示售完；手動下架狀態會另外保存。</p>
+      </div>
+      <button class="btn primary full" id="saveSettings" type="button">儲存設定</button>
+    </section>
+
+    <section class="panel" id="settlementPanel" role="tabpanel" aria-labelledby="settlementTab" hidden>
+      <div class="section-title"><h2>每日結算</h2><span id="settlementBadge" class="badge pending">尚未建立</span></div>
+      <div class="section">
+        <div class="field"><label for="settlementDate">結算日期</label><input class="input" id="settlementDate" type="date"></div>
+        <div class="amount-row">
+          <div class="field"><label for="cashSales">現金收款金額</label><input class="input money" id="cashSales" inputmode="decimal" placeholder="0"></div>
+          <div class="field"><label for="floatAmount">預備金／找零金</label><input class="input money" id="floatAmount" inputmode="decimal" placeholder="0"></div>
+          <div class="field"><label for="countedCash">實際盤點現金</label><input class="input money" id="countedCash" inputmode="decimal" placeholder="0"></div>
+          <div class="field"><label for="expenseAmount">支出金額</label><input class="input money" id="expenseAmount" inputmode="decimal" placeholder="0"></div>
+          <div class="field"><label for="wasteAmount">報廢成本</label><input class="input money" id="wasteAmount" inputmode="decimal" placeholder="0"></div>
+        </div>
+        <div class="section">
+          <div class="section-title"><h3>商品數量盤點</h3><span class="muted">填寫實際清點數量</span></div>
+          <div id="settlementInventoryList"></div>
+        </div>
+        <div class="field"><label for="settlementNote">備註／差額原因</label><textarea class="textarea" id="settlementNote" placeholder="填寫交班或核對事項"></textarea></div>
+        <div class="action-row">
+          <button class="btn" id="saveDraft" type="button">儲存草稿</button>
+          <button class="btn primary" id="closeSettlement" type="button">完成結算</button>
+          <button class="btn danger" id="reopenSettlement" type="button" hidden>重開結算</button>
+        </div>
+        <div class="status-note" id="settlementMeta">建立人員與時間會在示意資料中記錄。</div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="editDialog" aria-labelledby="editTitle">
+    <form id="editForm">
+      <div class="dialog-head"><h2 id="editTitle">修改訂單</h2><button class="btn" id="closeEdit" type="button" aria-label="關閉修改視窗">關閉</button></div>
+      <div class="dialog-content">
+        <input id="editOrderId" type="hidden">
+        <div class="field"><label for="editPickupDate">取餐日期</label><input class="input" id="editPickupDate" type="date" required></div>
+        <div class="field"><label for="editPickupTime">取餐時段</label><input class="input" id="editPickupTime" required></div>
+        <div class="field"><label for="editName">客戶姓名</label><input class="input" id="editName" required></div>
+        <div class="field"><label for="editPhone">客戶電話</label><input class="input" id="editPhone" inputmode="tel" required></div>
+        <div class="field"><label for="editItems">商品明細（每行一項）</label><textarea class="textarea" id="editItems" required></textarea></div>
+        <div class="field"><label for="editAmount">修改後訂單金額</label><input class="input" id="editAmount" type="number" min="0" step="1" required></div>
+        <div class="field"><label for="editRemarks">備註</label><textarea class="textarea" id="editRemarks"></textarea></div>
+        <div class="dialog-actions"><button class="btn" id="cancelEdit" type="button">返回</button><button class="btn primary" type="submit">確認修改</button></div>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script>
+    (() => {
+      'use strict';
+      const $ = (selector, root = document) => root.querySelector(selector);
+      const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+      const STORAGE_KEY = 'xiaka-operator-demo-v1';
+      const GOOGLE_CLIENT_ID = '384565693899-acvihnpcsrtpllgoi5kf9b9amks3tb1m.apps.googleusercontent.com';
+      const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzvNQOzzm16906irmZtSA_3mfWO2GDWqZSjTVEMa3Ao5A638n-JdfrRYov197A_DM1TOA/exec';
+      const roleSelect = $('#roleSelect');
+      const authFrame = document.createElement('iframe');
+      authFrame.name = 'operatorAuthFrame'; authFrame.title = 'Google 登入驗證'; authFrame.hidden = true; document.body.appendChild(authFrame);
+      let pendingAuthState = '';
+      let authTimeout;
+      let signedInOperator = null;
+      const now = new Date();
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+      const dateText = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', weekday: 'long', month: 'numeric', day: 'numeric' }).format(now);
+      $('#todayLabel').textContent = `今天・${dateText}`;
+      const updateClock = () => { $('#currentTime').textContent = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()); };
+      updateClock(); setInterval(updateClock, 15000);
+
+      const sample = {
+        orders: [
+          { id: 'A1754222', orderTime: `${today} 16:42`, pickupDate: today, pickupTime: '18:00–18:15', name: '林小姐', phone: '0912-345-2386', amount: 145, payment: '現金付款', status: 'pending', items: ['煙燻豆干 × 2', '甜不辣 × 1'], remarks: '辣椒另外包' },
+          { id: 'B1810307', orderTime: `${today} 17:03`, pickupDate: today, pickupTime: '18:15–18:30', name: '陳先生', phone: '0918-222-5912', amount: 120, payment: '現金付款', status: 'preparing', items: ['雞胗 × 1', '米血 × 2'], remarks: '' },
+          { id: 'C1935214', orderTime: `${today} 17:24`, pickupDate: today, pickupTime: '19:00–19:15', name: '王小姐', phone: '0987-111-8041', amount: 210, payment: '現金付款', status: 'pending', items: ['大腸 × 1', '百頁豆腐 × 2'], remarks: '' }
+        ],
+        settings: { [today]: { closed: false, openTime: '16:00', closeTime: '21:30', note: '', slots: [{ time: '17:00–17:15', enabled: true }, { time: '17:15–17:30', enabled: true }, { time: '18:00–18:15', enabled: true }, { time: '19:00–19:15', enabled: false }], stock: [{ id: 'P001', name: '煙燻豆干', quantity: 12, manualHidden: false }, { id: 'P002', name: '甜不辣', quantity: 0, manualHidden: false }, { id: 'P003', name: '米血', quantity: 8, manualHidden: true }] } },
+        inventoryLog: [], auditLog: [], settlements: {}
+      };
+      let data;
+      try { data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || sample; }
+      catch (_) { data = sample; }
+      let activeFilter = 'unfinished';
+      let toastTimer;
+      let cancelArmed = new Set();
+
+      function saveLocal() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+      }
+      function money(amount) { return '$' + (Number(amount) || 0).toLocaleString('zh-TW'); }
+      function role() { return roleSelect.value; }
+      function canManageSchedule() { return role() !== '員工'; }
+      function canClose() { return role() !== '員工'; }
+      function makeAuthState() {
+        const bytes = new Uint8Array(24); crypto.getRandomValues(bytes);
+        return [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
+      }
+      function showAuthError(message) {
+        clearTimeout(authTimeout); pendingAuthState = '';
+        $('#authUserStatus').textContent = message;
+        $('#googleSignIn').hidden = false; $('#authSignOut').hidden = true;
+      }
+      function handleGoogleCredential(response) {
+        if (!response?.credential) { showAuthError('未取得 Google 登入憑證'); return; }
+        pendingAuthState = makeAuthState();
+        $('#authUserStatus').textContent = '正在由 GAS 驗證帳號與角色…';
+        $('#googleSignIn').hidden = true;
+        const form = document.createElement('form');
+        form.method = 'POST'; form.action = GAS_WEB_APP_URL; form.target = authFrame.name; form.hidden = true;
+        const addField = (name, value) => { const field = document.createElement('input'); field.type = 'hidden'; field.name = name; field.value = value; form.appendChild(field); };
+        addField('operatorAuth', '1');
+        addField('payload', JSON.stringify({ credential: response.credential, state: pendingAuthState }));
+        document.body.appendChild(form); form.submit(); form.remove();
+        clearTimeout(authTimeout);
+        authTimeout = setTimeout(() => showAuthError('登入驗證逾時，請重試'), 20000);
+      }
+      function initializeGoogleSignIn() {
+        if (!window.google?.accounts?.id) return;
+        google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleCredential, auto_select: false });
+        google.accounts.id.renderButton($('#googleSignIn'), { type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill', width: 210 });
+      }
+      const googleIdentityScript = document.createElement('script');
+      googleIdentityScript.src = 'https://accounts.google.com/gsi/client'; googleIdentityScript.async = true;
+      googleIdentityScript.onload = initializeGoogleSignIn;
+      googleIdentityScript.onerror = () => { $('#authUserStatus').textContent = 'Google 登入元件載入失敗'; };
+      document.head.appendChild(googleIdentityScript);
+      window.addEventListener('message', event => {
+        if (event.source !== authFrame.contentWindow || event.origin !== 'https://script.google.com' && !event.origin.endsWith('.googleusercontent.com')) return;
+        const message = event.data;
+        if (!message || message.type !== 'XIAKA_OPERATOR_AUTH' || message.state !== pendingAuthState) return;
+        clearTimeout(authTimeout); pendingAuthState = '';
+        if (!message.result?.success || !message.result.user) {
+          showAuthError(message.result?.message || '此 Google 帳號未獲授權'); return;
+        }
+        signedInOperator = message.result.user;
+        if (!['系統管理員', '店長', '員工'].includes(signedInOperator.role)) {
+          signedInOperator = null; showAuthError('帳號角色設定無效，請聯絡管理者'); return;
+        }
+        roleSelect.value = signedInOperator.role; roleSelect.disabled = true;
+        $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}`;
+        $('#authSignOut').hidden = false;
+        renderSettings(); renderSettlement();
+      });
+      function showToast(message) {
+        const toast = $('#toast'); toast.textContent = message; toast.hidden = false;
+        clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.hidden = true; }, 2600);
+      }
+      const statusLabel = { pending: '待處理', preparing: '準備中', completed: '已完成', cancelled: '已取消' };
+      function renderOrders() {
+        const query = $('#orderSearch').value.trim().toLowerCase();
+        const date = $('#orderDate').value;
+        $('#unfinishedCount').textContent = data.orders.filter(order => ['pending', 'preparing'].includes(order.status)).length;
+        const visible = data.orders.filter(order => {
+          const matchesStatus = activeFilter === 'all' || (activeFilter === 'unfinished' ? ['pending', 'preparing'].includes(order.status) : order.status === activeFilter);
+          const matchesQuery = !query || [order.id, order.name, order.phone].some(value => String(value).toLowerCase().includes(query));
+          const matchesDate = !date || order.pickupDate === date;
+          return matchesStatus && matchesQuery && matchesDate;
+        }).sort((a,b) => `${a.pickupDate} ${a.pickupTime}`.localeCompare(`${b.pickupDate} ${b.pickupTime}`));
+        $('#orderCount').textContent = `顯示 ${visible.length} 筆`;
+        const list = $('#orderList');
+        if (!visible.length) { list.innerHTML = '<div class="empty">沒有符合條件的訂單</div>'; return; }
+        list.innerHTML = visible.map(order => `
+          <article class="order-card" data-order="${escapeHtml(order.id)}">
+            <div class="order-title"><span class="order-code">${escapeHtml(order.id)}</span><span class="badge ${escapeHtml(order.status)}">${statusLabel[order.status]}</span></div>
+            <div class="order-meta"><span>取餐 ${escapeHtml(order.pickupTime)}</span><span>・</span><span>${escapeHtml(order.name)}</span><span>・</span><span>末四碼 ${escapeHtml(order.phone.slice(-4))}</span></div>
+            ${order.items.map(item => `<div class="item-row"><span>${escapeHtml(item)}</span></div>`).join('')}
+            <div class="item-row total-row"><span>${escapeHtml(order.payment)}</span><span>金額 ${money(order.amount)}</span></div>
+            <details><summary>查看完整資料</summary><div class="detail-body"><div>下單時間：${escapeHtml(order.orderTime)}</div><div>取餐日期：${escapeHtml(order.pickupDate)}</div><div>電話：${escapeHtml(order.phone)}</div><div>備註：${escapeHtml(order.remarks || '無')}</div></div></details>
+            <div class="action-row">${order.status === 'pending' ? `<button class="btn primary" data-action="prepare" data-id="${escapeHtml(order.id)}">開始準備</button>` : ''}${order.status === 'preparing' ? `<button class="btn primary" data-action="complete" data-id="${escapeHtml(order.id)}">標示已完成</button>` : ''}${order.status !== 'cancelled' ? `<button class="btn" data-action="edit" data-id="${escapeHtml(order.id)}">修改訂單</button><button class="btn danger" data-action="cancel" data-id="${escapeHtml(order.id)}">${cancelArmed.has(order.id) ? '再按一次確認取消' : '取消訂單'}</button>` : ''}</div>
+          </article>`).join('');
+      }
+      function setOrderStatus(id, status) {
+        const order = data.orders.find(item => item.id === id); if (!order) return;
+        const before = { status: order.status };
+        order.status = status;
+        data.auditLog.unshift({ at: new Date().toISOString(), actor: role(), order: id, action: '更新狀態', before, after: { status } });
+        saveLocal(); renderOrders(); showToast(`示意訂單已更新為「${statusLabel[status]}」`);
+      }
+      function openEdit(id) {
+        const order = data.orders.find(item => item.id === id); if (!order) return;
+        $('#editOrderId').value = id; $('#editPickupDate').value = order.pickupDate; $('#editPickupTime').value = order.pickupTime;
+        $('#editName').value = order.name; $('#editPhone').value = order.phone; $('#editItems').value = order.items.join('\n');
+        $('#editAmount').value = order.amount; $('#editRemarks').value = order.remarks || ''; $('#editDialog').showModal();
+      }
+      function getDaySettings(day) {
+        if (!data.settings[day]) data.settings[day] = JSON.parse(JSON.stringify(sample.settings[today]));
+        return data.settings[day];
+      }
+      function renderSettings() {
+        const day = $('#settingDate').value || today, settings = getDaySettings(day);
+        $('#closedToggle').checked = !!settings.closed; $('#openTime').value = settings.openTime || '16:00';
+        $('#closeTime').value = settings.closeTime || '21:30'; $('#specialNote').value = settings.note || '';
+        $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${canManageSchedule() ? '' : 'disabled'}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('');
+        $('#stockList').innerHTML = settings.stock.map((item,index) => `<div class="stock-row"><div><div class="stock-name">${escapeHtml(item.name)}</div><div class="stock-sub">${item.quantity === 0 ? '庫存售完' : '可售數量'}</div></div><input class="qty-input" type="number" min="0" step="1" value="${Number(item.quantity) || 0}" data-qty="${index}" aria-label="${escapeHtml(item.name)}可售數量"><label class="switch-label"><input type="checkbox" data-hidden="${index}" ${item.manualHidden ? 'checked' : ''}>手動下架</label></div>`).join('');
+        ['closedToggle','openTime','closeTime','specialNote'].forEach(id => { $('#'+id).disabled = !canManageSchedule(); });
+        $('#saveSettings').disabled = false;
+      }
+      function renderSettlement() {
+        const day = $('#settlementDate').value || today;
+        const record = data.settlements[day];
+        $('#settlementBadge').textContent = record ? ({ draft: '草稿', closed: '已結算', reopened: '已重開' }[record.status] || '草稿') : '尚未建立';
+        $('#settlementBadge').className = 'badge ' + (record?.status === 'closed' ? 'completed' : 'pending');
+        $('#reopenSettlement').hidden = !(record?.status === 'closed' && canClose());
+        $('#closeSettlement').disabled = !canClose() || record?.status === 'closed';
+        $('#saveDraft').disabled = record?.status === 'closed';
+        $('#settlementMeta').textContent = record ? `最後儲存：${record.updatedAt ? new Date(record.updatedAt).toLocaleString('zh-TW') : '—'} ・操作人：${record.actor || '—'}` : '建立人員與時間會在示意資料中記錄。';
+        const settings = getDaySettings(day);
+        const inventoryCounts = record?.inventoryCounts || {};
+        $('#settlementInventoryList').innerHTML = settings.stock.length
+          ? settings.stock.map(item => `<div class="count-row"><span class="stock-name">${escapeHtml(item.name)}</span><span class="count-current">登記 ${Number(item.quantity) || 0}</span><input class="count-input" type="number" min="0" step="1" inputmode="numeric" placeholder="盤點數量" data-counted-stock="${escapeHtml(item.id)}" value="${inventoryCounts[item.id] ?? ''}" aria-label="${escapeHtml(item.name)}實際盤點數量" ${record?.status === 'closed' ? 'disabled' : ''}></div>`).join('')
+          : '<div class="empty">此日期沒有商品資料</div>';
+        if (record) {
+          $('#cashSales').value = record.cashSales ?? ''; $('#floatAmount').value = record.floatAmount ?? '';
+          $('#countedCash').value = record.countedCash ?? ''; $('#expenseAmount').value = record.expenseAmount ?? '';
+          $('#wasteAmount').value = record.wasteAmount ?? ''; $('#settlementNote').value = record.note ?? '';
+        } else {
+          ['cashSales','floatAmount','countedCash','expenseAmount','wasteAmount','settlementNote'].forEach(id => { $('#'+id).value = ''; });
+        }
+      }
+      function saveSettlement(status) {
+        const day = $('#settlementDate').value;
+        const old = data.settlements[day] || {};
+        const inventoryCounts = {};
+        $$('[data-counted-stock]').forEach(input => { if (input.value !== '') inventoryCounts[input.dataset.countedStock] = Math.max(0, Number(input.value) || 0); });
+        data.settlements[day] = { ...old, date: day, status, cashSales: Number($('#cashSales').value) || 0, floatAmount: Number($('#floatAmount').value) || 0, countedCash: Number($('#countedCash').value) || 0, expenseAmount: Number($('#expenseAmount').value) || 0, wasteAmount: Number($('#wasteAmount').value) || 0, inventoryCounts, note: $('#settlementNote').value.trim(), actor: role(), updatedAt: new Date().toISOString() };
+        saveLocal(); renderSettlement(); showToast(status === 'closed' ? '示意結算已完成' : '示意結算草稿已儲存');
+      }
+      $$('.tab').forEach(tab => tab.addEventListener('click', () => {
+        $$('.tab').forEach(item => item.setAttribute('aria-selected', String(item === tab)));
+        $$('.panel').forEach(panel => { panel.hidden = panel.id !== tab.getAttribute('aria-controls'); });
+      }));
+      $$('.chip').forEach(button => button.addEventListener('click', () => {
+        $$('.chip').forEach(item => item.classList.toggle('active', item === button)); activeFilter = button.dataset.filter; renderOrders();
+      }));
+      $('#orderSearch').addEventListener('input', renderOrders); $('#orderDate').addEventListener('change', renderOrders);
+      $('#orderList').addEventListener('click', event => {
+        const button = event.target.closest('[data-action]'); if (!button) return;
+        const id = button.dataset.id, action = button.dataset.action;
+        if (action === 'prepare') setOrderStatus(id, 'preparing');
+        if (action === 'complete') setOrderStatus(id, 'completed');
+        if (action === 'edit') openEdit(id);
+        if (action === 'cancel') {
+          if (!cancelArmed.has(id)) { cancelArmed.add(id); renderOrders(); setTimeout(() => { cancelArmed.delete(id); renderOrders(); }, 5000); showToast('請在 5 秒內再次點擊取消'); }
+          else { cancelArmed.delete(id); setOrderStatus(id, 'cancelled'); }
+        }
+      });
+      $('#closeEdit').addEventListener('click', () => $('#editDialog').close()); $('#cancelEdit').addEventListener('click', () => $('#editDialog').close());
+      $('#editForm').addEventListener('submit', event => {
+        event.preventDefault(); const order = data.orders.find(item => item.id === $('#editOrderId').value); if (!order) return;
+        if (!confirm('確認修改訂單資料與金額？')) return;
+        const before = JSON.parse(JSON.stringify(order));
+        Object.assign(order, { pickupDate: $('#editPickupDate').value, pickupTime: $('#editPickupTime').value.trim(), name: $('#editName').value.trim(), phone: $('#editPhone').value.trim(), items: $('#editItems').value.split('\n').map(s => s.trim()).filter(Boolean), amount: Number($('#editAmount').value) || 0, remarks: $('#editRemarks').value.trim() });
+        data.auditLog.unshift({ at: new Date().toISOString(), actor: role(), order: order.id, action: '修改訂單', before, after: JSON.parse(JSON.stringify(order)) });
+        saveLocal(); $('#editDialog').close(); renderOrders(); showToast('示意訂單已修改，異動紀錄已保留');
+      });
+      $('#settingDate').value = today; $('#settlementDate').value = today; $('#orderDate').value = today;
+      $('#settingDate').addEventListener('change', renderSettings);
+      $('#slotList').addEventListener('click', event => {
+        const button = event.target.closest('[data-slot]'); if (!button || !canManageSchedule()) return;
+        const settings = getDaySettings($('#settingDate').value); settings.slots[Number(button.dataset.slot)].enabled = !settings.slots[Number(button.dataset.slot)].enabled; renderSettings(); saveLocal();
+      });
+      $('#saveSettings').addEventListener('click', () => {
+        const day = $('#settingDate').value, settings = getDaySettings(day);
+        const oldStock = JSON.parse(JSON.stringify(settings.stock));
+        settings.closed = $('#closedToggle').checked; settings.openTime = $('#openTime').value; settings.closeTime = $('#closeTime').value; settings.note = $('#specialNote').value.trim();
+        $$('[data-qty]').forEach(input => { settings.stock[Number(input.dataset.qty)].quantity = Math.max(0, Number(input.value) || 0); });
+        $$('[data-hidden]').forEach(input => { settings.stock[Number(input.dataset.hidden)].manualHidden = input.checked; });
+        const reason = $('#stockReason').value.trim();
+        settings.stock.forEach((item,index) => { if (item.quantity !== oldStock[index].quantity) data.inventoryLog.unshift({ at: new Date().toISOString(), actor: role(), productId: item.id, name: item.name, before: oldStock[index].quantity, after: item.quantity, reason: reason || '未填寫（示意）' }); });
+        saveLocal(); renderSettings(); showToast('示意設定已儲存在此瀏覽器');
+      });
+      $('#settlementDate').addEventListener('change', renderSettlement);
+      $('#authSignOut').addEventListener('click', () => {
+        signedInOperator = null; roleSelect.disabled = false; roleSelect.value = '店長';
+        if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
+        $('#authUserStatus').textContent = '已登出 Google'; $('#googleSignIn').hidden = false; $('#authSignOut').hidden = true;
+        renderSettings(); renderSettlement();
+      });
+      $('#saveDraft').addEventListener('click', () => saveSettlement('draft'));
+      $('#closeSettlement').addEventListener('click', () => { if (canClose() && confirm('確認完成這一天的結算？')) saveSettlement('closed'); });
+      $('#reopenSettlement').addEventListener('click', () => {
+        if (!canClose() || !confirm('確認重開已完成的結算？')) return;
+        const record = data.settlements[$('#settlementDate').value]; if (record) { record.status = 'reopened'; record.actor = role(); record.updatedAt = new Date().toISOString(); saveLocal(); renderSettlement(); showToast('示意結算已重開'); }
+      });
+      roleSelect.addEventListener('change', () => { renderSettings(); renderSettlement(); showToast(`展示角色已切換為「${role()}」`); });
+      renderOrders(); renderSettings(); renderSettlement();
+    })();
+  </script>
+</body>
+</html>
