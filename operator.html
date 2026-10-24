@@ -147,9 +147,9 @@
         <option value="員工">員工</option>
       </select>
     </div>
-    <div class="sync-line"><span class="sync-dot" aria-hidden="true"></span><span>示意模式・資料只存在這個瀏覽器</span></div>
-    <div class="auth-line"><span class="auth-user" id="authUserStatus" aria-live="polite">尚未登入 Google</span><div class="auth-controls"><div id="googleSignIn"></div><button class="btn" id="authSignOut" type="button" hidden>登出</button></div></div>
-    <div class="demo-ribbon">尚未連接 Google 登入或正式試算表。此頁變更不會影響正式訂單。</div>
+    <div class="sync-line"><span class="sync-dot" aria-hidden="true"></span><span id="connectionStatus">示意模式・資料只存在這個瀏覽器</span></div>
+    <div class="auth-line"><span class="auth-user" id="authUserStatus" aria-live="polite">尚未登入 Google</span><div class="auth-controls"><button class="btn" id="openGasConnection" type="button">啟用連線視窗</button><div id="googleSignIn" hidden></div><button class="btn" id="authSignOut" type="button" hidden>登出</button></div></div>
+    <div class="demo-ribbon" id="connectionNotice">尚未連接 Google 登入或試算表。此頁顯示的是本機示意資料。</div>
   </header>
 
   <nav class="tabbar" role="tablist" aria-label="現場作業功能">
@@ -253,8 +253,8 @@
       const GOOGLE_CLIENT_ID = '384565693899-acvihnpcsrtpllgoi5kf9b9amks3tb1m.apps.googleusercontent.com';
       const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzhJjRbPpSoad-yC4CWKBepUWLTs36aZytQgmBhhqVMHyzeUgGJByOK0jxlh8EpsAis/exec';
       const roleSelect = $('#roleSelect');
-      const authFrame = document.createElement('iframe');
-      authFrame.name = 'operatorAuthFrame'; authFrame.title = 'Google 登入驗證'; authFrame.hidden = true; document.body.appendChild(authFrame);
+      const GAS_REPLY_WINDOW_NAME = 'xiakaOperatorGasReply';
+      let gasReplyWindow = null;
       let pendingAuthState = '';
       let authTimeout;
       let signedInOperator = null;
@@ -296,8 +296,31 @@
         const bytes = new Uint8Array(24); crypto.getRandomValues(bytes);
         return [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
       }
+      function openGasConnectionWindow() {
+        if (gasReplyWindow && !gasReplyWindow.closed) {
+          gasReplyWindow.focus();
+          $('#openGasConnection').hidden = true;
+          $('#googleSignIn').hidden = false;
+          $('#authUserStatus').textContent = '連線視窗已就緒，請使用 Google 登入';
+          return;
+        }
+        gasReplyWindow = window.open('', GAS_REPLY_WINDOW_NAME, 'popup,width=480,height=300,resizable=yes,scrollbars=yes');
+        if (!gasReplyWindow) {
+          $('#authUserStatus').textContent = '連線視窗被封鎖，請允許此網站開啟彈出式視窗後重試';
+          showToast('請允許此網站開啟彈出式視窗');
+          return;
+        }
+        gasReplyWindow.name = GAS_REPLY_WINDOW_NAME;
+        gasReplyWindow.document.title = '呷喀作業頁資料連線';
+        gasReplyWindow.document.body.innerHTML = '<main style="font:16px system-ui,sans-serif;padding:24px;color:#4b2d1c"><h2>作業頁安全連線</h2><p>此視窗會接收測試 GAS 的驗證與唯讀資料回覆。請保持開啟，讀取完成後會自動關閉。</p></main>';
+        $('#openGasConnection').hidden = true;
+        $('#googleSignIn').hidden = false;
+        $('#authUserStatus').textContent = '連線視窗已就緒，請使用 Google 登入';
+      }
+      $('#openGasConnection').addEventListener('click', openGasConnectionWindow);
       function requestOperatorSnapshot() {
         const state = makeAuthState();
+        if (!gasReplyWindow || gasReplyWindow.closed) return Promise.reject(new Error('連線視窗已關閉，請登出後重新啟用連線視窗'));
         return new Promise((resolve, reject) => {
           const timeout = setTimeout(() => {
             pendingOperatorReads.delete(state);
@@ -305,7 +328,7 @@
           }, 20000);
           pendingOperatorReads.set(state, { resolve, reject, timeout });
           const form = document.createElement('form');
-          form.method = 'POST'; form.action = GAS_WEB_APP_URL; form.target = authFrame.name; form.hidden = true;
+          form.method = 'POST'; form.action = GAS_WEB_APP_URL; form.target = GAS_REPLY_WINDOW_NAME; form.hidden = true;
           const addField = (name, value) => { const field = document.createElement('input'); field.type = 'hidden'; field.name = name; field.value = value; form.appendChild(field); };
           addField('operatorRead', '1');
           addField('payload', JSON.stringify({ action: 'readSnapshot', credential: operatorCredential, state }));
@@ -324,6 +347,8 @@
           data.settings = {};
           data.settlements = response.data.settlements || {};
           $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・唯讀已連線`;
+          $('#connectionStatus').textContent = '測試試算表唯讀連線・不會寫入資料';
+          $('#connectionNotice').textContent = '目前讀取測試試算表資料；訂單、庫存、營業設定與結算操作仍為唯讀。';
           renderOrders(); renderSettings(); renderSettlement();
           showToast(`已讀取 ${data.orders.length} 筆訂單與 ${(response.data.products || []).length} 項商品`);
         } catch (error) {
@@ -334,7 +359,9 @@
       function showAuthError(message) {
         clearTimeout(authTimeout); pendingAuthState = '';
         $('#authUserStatus').textContent = message;
-        $('#googleSignIn').hidden = false; $('#authSignOut').hidden = true;
+        const popupReady = gasReplyWindow && !gasReplyWindow.closed;
+        $('#openGasConnection').hidden = !!popupReady;
+        $('#googleSignIn').hidden = !popupReady; $('#authSignOut').hidden = true;
       }
       function handleGoogleCredential(response) {
         if (!response?.credential) { showAuthError('未取得 Google 登入憑證'); return; }
@@ -342,11 +369,16 @@
           showAuthError('請先設定測試用 GAS /exec 網址'); return;
         }
         operatorCredential = response.credential;
+        if (!gasReplyWindow || gasReplyWindow.closed) {
+          showAuthError('請先按「啟用連線視窗」，再重新按 Google 登入');
+          $('#openGasConnection').hidden = false;
+          return;
+        }
         pendingAuthState = makeAuthState();
         $('#authUserStatus').textContent = '正在由 GAS 驗證帳號與角色…';
         $('#googleSignIn').hidden = true;
         const form = document.createElement('form');
-        form.method = 'POST'; form.action = GAS_WEB_APP_URL; form.target = authFrame.name; form.hidden = true;
+        form.method = 'POST'; form.action = GAS_WEB_APP_URL; form.target = GAS_REPLY_WINDOW_NAME; form.hidden = true;
         const addField = (name, value) => { const field = document.createElement('input'); field.type = 'hidden'; field.name = name; field.value = value; form.appendChild(field); };
         addField('operatorAuth', '1');
         addField('payload', JSON.stringify({ credential: response.credential, state: pendingAuthState }));
@@ -365,7 +397,7 @@
       googleIdentityScript.onerror = () => { $('#authUserStatus').textContent = 'Google 登入元件載入失敗'; };
       document.head.appendChild(googleIdentityScript);
       window.addEventListener('message', event => {
-        if (event.source !== authFrame.contentWindow || event.origin !== 'https://script.google.com' && !event.origin.endsWith('.googleusercontent.com')) return;
+        if (event.source !== gasReplyWindow || event.origin !== 'https://script.google.com' && !event.origin.endsWith('.googleusercontent.com')) return;
         const message = event.data;
         if (message?.type === 'XIAKA_OPERATOR_READ') {
           const pending = pendingOperatorReads.get(message.state);
@@ -539,7 +571,11 @@
         signedInOperator = null; operatorCredential = ''; readOnlyData = null; data = JSON.parse(JSON.stringify(sample));
         roleSelect.disabled = false; roleSelect.value = '店長';
         if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
-        $('#authUserStatus').textContent = '已登出 Google'; $('#googleSignIn').hidden = false; $('#authSignOut').hidden = true;
+        if (gasReplyWindow && !gasReplyWindow.closed) gasReplyWindow.close();
+        gasReplyWindow = null;
+        $('#authUserStatus').textContent = '已登出 Google'; $('#openGasConnection').hidden = false; $('#googleSignIn').hidden = true; $('#authSignOut').hidden = true;
+        $('#connectionStatus').textContent = '示意模式・資料只存在這個瀏覽器';
+        $('#connectionNotice').textContent = '尚未連接 Google 登入或試算表。此頁顯示的是本機示意資料。';
         renderSettings(); renderSettlement();
       });
       $('#saveDraft').addEventListener('click', () => saveSettlement('draft'));
