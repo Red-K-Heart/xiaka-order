@@ -173,15 +173,7 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-2 pt-1">
-            <div>
-              <label class="block text-xs font-bold text-gray-600 mb-1">整單辣醬 (Overall_Chili_Sauce)</label>
-              <select id="selectChiliSauce" class="w-full border border-amber-300 rounded-xl p-2 text-xs bg-white font-bold">
-                <option value="不加">不加辣醬</option>
-                <option value="要">加獨門辣醬 🌶️</option>
-              </select>
-            </div>
-
+          <div class="grid grid-cols-1 gap-2 pt-1">
             <div>
               <label class="block text-xs font-bold text-gray-600 mb-1">蔬菜分裝 (Veg_Separate)</label>
               <select id="selectVegSeparate" class="w-full border border-amber-300 rounded-xl p-2 text-xs bg-white font-bold">
@@ -191,26 +183,6 @@
             </div>
           </div>
 
-          <div class="pt-1">
-            <label class="block text-xs font-bold text-gray-600 mb-1">加購/索取額外醬包 (Extra Packs)</label>
-
-            <div class="grid grid-cols-3 gap-2 text-center text-xs">
-              <div class="bg-amber-50 p-1.5 rounded-xl border border-amber-200">
-                <span class="block font-bold text-gray-600">椒鹽包</span>
-                <input type="number" id="inputExtraPepper" value="0" min="0" class="w-full text-center border rounded mt-1 p-0.5 font-bold" />
-              </div>
-
-              <div class="bg-amber-50 p-1.5 rounded-xl border border-amber-200">
-                <span class="block font-bold text-gray-600">辣粉包</span>
-                <input type="number" id="inputExtraChili" value="0" min="0" class="w-full text-center border rounded mt-1 p-0.5 font-bold" />
-              </div>
-
-              <div class="bg-amber-50 p-1.5 rounded-xl border border-amber-200">
-                <span class="block font-bold text-gray-600">醬料包</span>
-                <input type="number" id="inputExtraSauce" value="0" min="0" class="w-full text-center border rounded mt-1 p-0.5 font-bold" />
-              </div>
-            </div>
-          </div>
         </div>
 
         <div class="pt-4 space-y-2">
@@ -1790,11 +1762,7 @@ function loadProductsFromGas(successCallback, errorCallback) {
         pickupTimeSlot: pickupTime,
         overallPepper: valOverallPepper,
         overallChiliPowder: valOverallChiliPowder,
-        overallChiliSauce: document.getElementById('selectChiliSauce').value,
         vegSeparate: document.getElementById('selectVegSeparate').value,
-        extraPepper: Number(document.getElementById('inputExtraPepper').value) || 0,
-        extraChili: Number(document.getElementById('inputExtraChili').value) || 0,
-        extraSauce: Number(document.getElementById('inputExtraSauce').value) || 0,
         promoCode: document.getElementById('inputPromoCode').value.trim(),
         remarks: document.getElementById('inputRemarks').value.trim(),
         items: orderItems,
@@ -2153,19 +2121,7 @@ function loadProductsFromGas(successCallback, errorCallback) {
     addRow('訂單時間', formatOrderDateTime(order.order_time));
     addRow('胡椒鹽', order.overall_pepper);
     addRow('辣椒粉', order.overall_chili_powder);
-    addRow('辣醬', order.overall_chili_sauce);
     addRow('蔬菜分裝', order.veg_separate);
-
-    const extraPacks = [
-      ['胡椒鹽包', order.extra_pepper_pack],
-      ['辣椒粉包', order.extra_chili_pack],
-      ['辣醬包', order.extra_sauce_pack]
-    ]
-      .filter(([label, quantity]) => Number(quantity) > 0)
-      .map(([label, quantity]) => label + ' ' + quantity + ' 包');
-    if (extraPacks.length > 0) {
-      addRow('加購醬包', extraPacks.join('、'));
-    }
 
     if (Number(order.discount_amount) > 0) {
       addRow(
