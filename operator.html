@@ -178,6 +178,13 @@
     <section class="panel" id="settingsPanel" role="tabpanel" aria-labelledby="settingsTab" hidden>
       <div class="section-title"><h2>營業與庫存設定</h2><span class="muted">依日期設定</span></div>
       <div class="section">
+        <div class="section-title"><h3>測試系統時間</h3><span class="muted">僅供功能預覽</span></div>
+        <p class="muted">輸入 12 位數時間：yyyymmddhhmm，例如 202610251430。只會模擬營業狀態，不會修改試算表或實際系統時間。</p>
+        <div class="field"><label for="testClockInput">測試日期與時間</label><input class="input" id="testClockInput" type="text" inputmode="numeric" maxlength="12" placeholder="yyyymmddhhmm" autocomplete="off"></div>
+        <div class="action-row"><button class="btn primary" id="applyTestClock" type="button">套用測試時間</button><button class="btn" id="resetTestClock" type="button">還原目前時間</button></div>
+        <div class="status-note" id="businessTestResult" aria-live="polite">尚未套用測試時間。</div>
+      </div>
+      <div class="section">
         <div class="field"><label for="settingDate">設定日期</label><input class="input" id="settingDate" type="date"></div>
         <label class="switch-row"><span>當日休息，不接受新訂單</span><input id="closedToggle" type="checkbox"></label>
         <div class="field-inline">
@@ -188,7 +195,7 @@
         <div class="status-note">停用取餐時段只會阻止新訂單，既有訂單保留原時段。</div>
       </div>
       <div class="section">
-        <div class="section-title"><h3>可取餐時段</h3><span class="muted">示意時段</span></div>
+        <div class="section-title"><h3>可取餐時段</h3><span class="muted">讀取 Pickup_Slots</span></div>
         <div id="slotList"></div>
       </div>
       <div class="section">
@@ -259,6 +266,9 @@
       let signedInOperator = null;
       let operatorCredential = '';
       let readOnlyData = null;
+      let testClockOverride = null;
+      let ordersRefreshTimer = null;
+      let ordersRefreshInFlight = false;
       const now = new Date();
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
       const dateText = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', weekday: 'long', month: 'numeric', day: 'numeric' }).format(now);
@@ -351,6 +361,26 @@
           return message.result;
         });
       }
+      async function refreshOrdersFromSheet() {
+        if (!signedInOperator || document.hidden || $('#ordersPanel').hidden || ordersRefreshInFlight) return;
+        ordersRefreshInFlight = true;
+        const operatorAtRequest = signedInOperator;
+        try {
+          const response = await requestOperatorSnapshot();
+          if (signedInOperator !== operatorAtRequest) return;
+          data.orders = Array.isArray(response.data.orders) ? response.data.orders : [];
+          if (readOnlyData) readOnlyData.orders = data.orders;
+          renderOrders();
+        } catch (error) {
+          console.warn('[Operator] 訂單自動更新失敗：', error.message);
+        } finally {
+          ordersRefreshInFlight = false;
+        }
+      }
+      function startOrdersAutoRefresh() {
+        clearInterval(ordersRefreshTimer);
+        ordersRefreshTimer = setInterval(refreshOrdersFromSheet, 30000);
+      }
       function requestOperatorWrite(action, order, changes) {
         const state = makeAuthState();
         return requestOperatorResponse('operatorWrite', { action, credential: operatorCredential, state, orderId: order.id, revision: order.revision || 0, changes: changes || {} }).then(message => {
@@ -371,9 +401,10 @@
           data.settings = {};
           data.settlements = response.data.settlements || {};
           $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・唯讀已連線`;
-          $('#connectionStatus').textContent = '正式試算表已連線';
+          $('#connectionStatus').textContent = '正式試算表已連線・訂單每30秒更新';
           $('#connectionNotice').textContent = '訂單狀態可由作業頁更新；完整資料修改限系統管理員與店長。商品、營業設定及結算仍為唯讀。';
           renderOrders(); renderSettings(); renderSettlement();
+          startOrdersAutoRefresh();
           showToast(`已讀取 ${data.orders.length} 筆訂單與 ${(response.data.products || []).length} 項商品`);
         } catch (error) {
           $('#authUserStatus').textContent = `登入成功，資料讀取失敗：${error.message}`;
@@ -468,23 +499,93 @@
         if (readOnlyData) {
           const source = readOnlyData.settings || {};
           const calendarDay = (readOnlyData.businessCalendar || []).find(item => item.date === day) || {};
+          const weekdayCode = ['SUN','MON','TUE','WED','THU','FRI','SAT'][new Date(`${day}T12:00:00Z`).getUTCDay()];
+          const businessDays = Array.isArray(source.businessDays) ? source.businessDays : ['MON','TUE','WED','THU','FRI','SAT','SUN'];
+          const isSpecialOpen = calendarDay.businessType === 'SPECIAL_OPEN';
+          const isClosed = !!source.closed || !!calendarDay.closed || (!isSpecialOpen && businessDays.indexOf(weekdayCode) < 0);
+          const openTime = calendarDay.openTime || source.openTime || '';
+          const closeTime = calendarDay.closeTime || source.closeTime || '';
+          const pickupStart = calendarDay.pickupStartTime || source.pickupStartTime || '';
+          const pickupEnd = calendarDay.pickupEndTime || source.pickupEndTime || '';
+          const interval = Number(calendarDay.pickupIntervalMinutes || source.pickupIntervalMinutes) || 30;
+          let slots = (readOnlyData.pickupSlots || []).filter(slot => !slot.date || slot.date === day);
+          if (!slots.length && pickupStart && pickupEnd) {
+            const toMinutes = value => { const [h,m] = value.split(':').map(Number); return h * 60 + m; };
+            const format = value => `${String(Math.floor(value / 60)).padStart(2,'0')}:${String(value % 60).padStart(2,'0')}`;
+            const disabled = source.disabledSlots || [];
+            for (let start = toMinutes(pickupStart); start < toMinutes(pickupEnd); start += interval) {
+              const end = Math.min(start + interval, toMinutes(pickupEnd));
+              const time = `${format(start)}–${format(end)}`;
+              const blocked = disabled.some(range => {
+                const parts = String(range).replace(/\s/g,'').split('-');
+                if (parts.length !== 2) return false;
+                try { return start < toMinutes(parts[1]) && end > toMinutes(parts[0]); } catch (_) { return false; }
+              });
+              slots.push({ date: day, time, enabled: !isClosed && !blocked });
+            }
+          }
+          if (isClosed) slots = slots.map(slot => ({ ...slot, enabled: false }));
           return {
-            closed: calendarDay.closed ?? !!source.closed,
-            openTime: calendarDay.openTime || source.openTime || '',
-            closeTime: calendarDay.closeTime || source.closeTime || '',
+            closed: isClosed,
+            openTime,
+            closeTime,
             note: calendarDay.note || source.note || '',
-            slots: (readOnlyData.pickupSlots || []).filter(slot => !slot.date || slot.date === day),
+            slots,
             stock: readOnlyData.products || []
           };
         }
         if (!data.settings[day]) data.settings[day] = JSON.parse(JSON.stringify(sample.settings[today]));
         return data.settings[day];
       }
+      function parseTestClock(value) {
+        const digits = String(value || '').trim();
+        if (!/^\d{12}$/.test(digits)) throw new Error('請輸入 12 位數時間，格式為 yyyymmddhhmm。');
+        const year = Number(digits.slice(0,4)), month = Number(digits.slice(4,6)), date = Number(digits.slice(6,8));
+        const hour = Number(digits.slice(8,10)), minute = Number(digits.slice(10,12));
+        const check = new Date(Date.UTC(year, month - 1, date, hour, minute));
+        if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== date || hour > 23 || minute > 59) {
+          throw new Error('日期或時間無效，請檢查年月日、時、分。');
+        }
+        return { date: digits.slice(0,8).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'), hour, minute, digits };
+      }
+      function getBusinessTestStatus(day) {
+        const source = readOnlyData?.settings || {};
+        const calendarDay = (readOnlyData?.businessCalendar || []).find(item => item.date === day) || {};
+        const weekday = ['SUN','MON','TUE','WED','THU','FRI','SAT'][new Date(`${day}T12:00:00Z`).getUTCDay()];
+        const businessDays = Array.isArray(source.businessDays) ? source.businessDays : ['MON','TUE','WED','THU','FRI','SAT','SUN'];
+        const specialOpen = calendarDay.businessType === 'SPECIAL_OPEN';
+        const openDay = specialOpen || (!calendarDay.closed && businessDays.includes(weekday));
+        const openTime = calendarDay.openTime || source.openTime || '06:00';
+        const closeTime = calendarDay.closeTime || source.closeTime || '17:30';
+        let simulated = testClockOverride && testClockOverride.date === day ? testClockOverride : null;
+        const actualDay = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Taipei', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
+        let currentMinutes = null;
+        if (simulated) currentMinutes = simulated.hour * 60 + simulated.minute;
+        else if (day === actualDay) {
+          const hm = new Intl.DateTimeFormat('en-GB', { timeZone:'Asia/Taipei', hour:'2-digit', minute:'2-digit', hourCycle:'h23' }).format(new Date()).split(':').map(Number);
+          currentMinutes = hm[0] * 60 + hm[1];
+        }
+        const toMinutes = value => { const [h,m] = value.split(':').map(Number); return h * 60 + m; };
+        let state, detail;
+        if (source.closed) { state = '全店暫停接單'; detail = 'Settings 的 Store_Status 為 CLOSED。'; }
+        else if (calendarDay.closed) { state = '指定日期休息'; detail = calendarDay.note || 'Business_Calendar 設為 CLOSED。'; }
+        else if (!openDay) { state = '每週公休日'; detail = `${weekday} 不在 Business_Days 設定中。`; }
+        else if (currentMinutes === null) { state = specialOpen ? '特殊營業日' : '每週營業日'; detail = `訂餐時間 ${openTime}–${closeTime}，可用測試時間確認開放狀態。`; }
+        else {
+          const start = toMinutes(openTime), end = toMinutes(closeTime);
+          const accepting = start <= end ? currentMinutes >= start && currentMinutes < end : currentMinutes >= start || currentMinutes < end;
+          state = accepting ? '開放接單' : '非訂餐開放時間';
+          detail = accepting ? `目前在訂餐時間 ${openTime}–${closeTime} 內。` : `訂餐時間為 ${openTime}–${closeTime}。`;
+        }
+        const stamp = simulated ? `測試時間 ${simulated.digits}` : '使用目前台灣時間';
+        return `${stamp}｜${state}。${detail}`;
+      }
       function renderSettings() {
         const day = $('#settingDate').value || today, settings = getDaySettings(day);
+        $('#businessTestResult').textContent = getBusinessTestStatus(day);
         $('#closedToggle').checked = !!settings.closed; $('#openTime').value = settings.openTime || '16:00';
         $('#closeTime').value = settings.closeTime || '21:30'; $('#specialNote').value = settings.note || '';
-        $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${readOnlyData || !canManageSchedule() ? 'disabled' : ''}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('') || (readOnlyData ? '<div class="empty">試算表尚無取餐時段資料</div>' : '');
+        $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${readOnlyData || !canManageSchedule() ? 'disabled' : ''}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('') || (readOnlyData ? `<div class="empty">${settings.closed ? '本日休息，未開放取餐時段。' : '請在 Settings 設定 Pickup_Start_Time、Pickup_End_Time 與 Pickup_Slot_Interval_Minutes。'}</div>` : '');
         $('#stockList').innerHTML = settings.stock.map((item,index) => `<div class="stock-row"><div><div class="stock-name">${escapeHtml(item.name)}</div><div class="stock-sub">${item.quantity === 0 ? '庫存售完' : '可售數量'}</div></div><input class="qty-input" type="number" min="0" step="1" value="${Number(item.quantity) || 0}" data-qty="${index}" aria-label="${escapeHtml(item.name)}可售數量" ${readOnlyData ? 'disabled' : ''}><label class="switch-label"><input type="checkbox" data-hidden="${index}" ${item.manualHidden ? 'checked' : ''} ${readOnlyData ? 'disabled' : ''}>手動下架</label></div>`).join('');
         ['closedToggle','openTime','closeTime','specialNote'].forEach(id => { $('#'+id).disabled = !!readOnlyData || !canManageSchedule(); });
         $('#saveSettings').disabled = !!readOnlyData;
@@ -524,7 +625,9 @@
       $$('.tab').forEach(tab => tab.addEventListener('click', () => {
         $$('.tab').forEach(item => item.setAttribute('aria-selected', String(item === tab)));
         $$('.panel').forEach(panel => { panel.hidden = panel.id !== tab.getAttribute('aria-controls'); });
+        if (tab.getAttribute('aria-controls') === 'ordersPanel') refreshOrdersFromSheet();
       }));
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshOrdersFromSheet(); });
       $$('.chip').forEach(button => button.addEventListener('click', () => {
         $$('.chip').forEach(item => item.classList.toggle('active', item === button)); activeFilter = button.dataset.filter; renderOrders();
       }));
@@ -549,6 +652,18 @@
       });
       $('#settingDate').value = today; $('#settlementDate').value = today; $('#orderDate').value = '';
       $('#settingDate').addEventListener('change', renderSettings);
+      $('#applyTestClock').addEventListener('click', () => {
+        try {
+          testClockOverride = parseTestClock($('#testClockInput').value);
+          $('#settingDate').value = testClockOverride.date;
+          renderSettings();
+          showToast('已套用測試時間；只影響本頁營業狀態預覽');
+        } catch (error) { showToast(error.message); }
+      });
+      $('#resetTestClock').addEventListener('click', () => {
+        testClockOverride = null; $('#testClockInput').value = ''; $('#settingDate').value = today;
+        renderSettings(); showToast('已還原目前台灣時間');
+      });
       $('#slotList').addEventListener('click', event => {
         const button = event.target.closest('[data-slot]'); if (!button || readOnlyData || !canManageSchedule()) return;
         const settings = getDaySettings($('#settingDate').value); settings.slots[Number(button.dataset.slot)].enabled = !settings.slots[Number(button.dataset.slot)].enabled; renderSettings(); saveLocal();
@@ -566,6 +681,7 @@
       });
       $('#settlementDate').addEventListener('change', renderSettlement);
       $('#authSignOut').addEventListener('click', () => {
+        clearInterval(ordersRefreshTimer); ordersRefreshTimer = null;
         signedInOperator = null; operatorCredential = ''; readOnlyData = null; data = JSON.parse(JSON.stringify(sample));
         roleSelect.disabled = false; roleSelect.value = '店長';
         if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
