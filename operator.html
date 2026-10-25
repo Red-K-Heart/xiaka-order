@@ -541,7 +541,7 @@
         data.auditLog.unshift({ at: new Date().toISOString(), actor: role(), order: order.id, action: '修改訂單', before, after: JSON.parse(JSON.stringify(order)) });
         saveLocal(); $('#editDialog').close(); renderOrders(); showToast('示意訂單已修改，異動紀錄已保留');
       });
-      $('#settingDate').value = today; $('#settlementDate').value = today; $('#orderDate').value = today;
+      $('#settingDate').value = today; $('#settlementDate').value = today; $('#orderDate').value = '';
       $('#settingDate').addEventListener('change', renderSettings);
       $('#slotList').addEventListener('click', event => {
         const button = event.target.closest('[data-slot]'); if (!button || readOnlyData || !canManageSchedule()) return;
