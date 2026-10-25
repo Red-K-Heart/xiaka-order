@@ -187,11 +187,6 @@
 
         <div class="pt-4 space-y-2">
           <div>
-            <label class="block text-xs font-bold text-gray-600 mb-1">折扣碼/優惠代碼 (Promo_Code_Used)</label>
-            <input type="text" id="inputPromoCode" placeholder="如：FULL500_50" class="w-full border border-amber-300 rounded-xl p-2 text-xs uppercase focus:ring-2 focus:ring-amber-500 outline-none" />
-          </div>
-
-          <div>
             <label class="block text-xs font-bold text-gray-600 mb-1">訂單備註 (Remarks)</label>
             <input type="text" id="inputRemarks" placeholder="如有其他特殊要求請填寫" class="w-full border border-amber-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-amber-500 outline-none" />
           </div>
@@ -1763,7 +1758,6 @@ function loadProductsFromGas(successCallback, errorCallback) {
         overallPepper: valOverallPepper,
         overallChiliPowder: valOverallChiliPowder,
         vegSeparate: document.getElementById('selectVegSeparate').value,
-        promoCode: document.getElementById('inputPromoCode').value.trim(),
         remarks: document.getElementById('inputRemarks').value.trim(),
         items: orderItems,
         totalAmount: totalAmount
@@ -2129,7 +2123,6 @@ function loadProductsFromGas(successCallback, errorCallback) {
         '$' + Number(order.discount_amount).toLocaleString('zh-TW')
       );
     }
-    addRow('優惠碼', order.promo_code_used);
     addRow(
       '訂單金額',
       '$' + (Number(order.total_amount) || 0).toLocaleString('zh-TW')
