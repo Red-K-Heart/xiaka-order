@@ -97,6 +97,12 @@
     .section { margin-top: 17px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
     .field { display: grid; gap: 6px; min-width: 0; margin: 11px 0; }
     .field label { font-size: 13px; font-weight: 700; }
+    .field-label { font-size: 13px; font-weight: 700; }
+    .weekday-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; margin-top: 5px; }
+    .weekday-option { min-height: 42px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: var(--surface-soft); font-size: 13px; }
+    .weekday-option:has(input:checked) { border-color: var(--brand); color: var(--brand-fg); background: var(--brand); }
+    .weekday-option input { width: 17px; height: 17px; accent-color: var(--brand); }
+    .weekday-option input:disabled { opacity: .65; }
     .field-inline { align-items: flex-end; }
     .field-inline .field { flex: 1; }
     .switch-row { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
@@ -176,7 +182,7 @@
     </section>
 
     <section class="panel" id="settingsPanel" role="tabpanel" aria-labelledby="settingsTab" hidden>
-      <div class="section-title"><h2>營業與庫存設定</h2><span class="muted">依日期設定</span></div>
+      <div class="section-title"><h2>營業與庫存設定</h2><span class="muted">基本規則＋日期檢視</span></div>
       <div class="section">
         <div class="section-title"><h3>測試系統時間</h3><span class="muted">僅供功能預覽</span></div>
         <p class="muted">輸入 12 位數時間：yyyymmddhhmm，例如 202610251430。只會模擬營業狀態，不會修改試算表或實際系統時間。</p>
@@ -185,14 +191,28 @@
         <div class="status-note" id="businessTestResult" aria-live="polite">尚未套用測試時間。</div>
       </div>
       <div class="section">
-        <div class="field"><label for="settingDate">設定日期</label><input class="input" id="settingDate" type="date"></div>
-        <label class="switch-row"><span>當日休息，不接受新訂單</span><input id="closedToggle" type="checkbox"></label>
+        <div class="section-title"><h3>營業規則設定</h3><span class="muted">系統管理員／店長可編輯</span></div>
         <div class="field-inline">
           <div class="field"><label for="openTime">可訂餐開始時間（24 小時制）</label><input class="input" id="openTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="16:00"></div>
           <div class="field"><label for="closeTime">可訂餐結束時間（24 小時制）</label><input class="input" id="closeTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="21:30"></div>
         </div>
-        <div class="field"><label for="specialNote">特殊營業日備註</label><input class="input" id="specialNote" placeholder="選填"></div>
+        <div class="field-inline">
+          <div class="field"><label for="pickupStartTime">可取餐開始時間（24 小時制）</label><input class="input" id="pickupStartTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="16:00"></div>
+          <div class="field"><label for="pickupEndTime">可取餐結束時間（24 小時制）</label><input class="input" id="pickupEndTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="17:30"></div>
+        </div>
+        <div class="field"><label for="pickupIntervalMinutes">取餐時段間隔（分鐘）</label><input class="input" id="pickupIntervalMinutes" type="number" min="1" max="720" step="1" inputmode="numeric" value="30"></div>
+        <div class="field"><span class="field-label">每週營業日</span><div class="weekday-grid" id="businessDaysOptions" role="group" aria-label="每週營業日">
+          <label class="weekday-option"><input type="checkbox" value="MON" data-business-day>週一</label><label class="weekday-option"><input type="checkbox" value="TUE" data-business-day>週二</label><label class="weekday-option"><input type="checkbox" value="WED" data-business-day>週三</label><label class="weekday-option"><input type="checkbox" value="THU" data-business-day>週四</label><label class="weekday-option"><input type="checkbox" value="FRI" data-business-day>週五</label><label class="weekday-option"><input type="checkbox" value="SAT" data-business-day>週六</label><label class="weekday-option"><input type="checkbox" value="SUN" data-business-day>週日</label>
+        </div></div>
+        <div class="status-note" id="businessDaysSummary" aria-live="polite"></div>
         <div class="status-note">停用取餐時段只會阻止新訂單，既有訂單保留原時段。</div>
+      </div>
+      <div class="section">
+        <div class="section-title"><h3>日期狀態檢視</h3><span class="muted">依週規則與特殊日判斷</span></div>
+        <div class="field"><label for="settingDate">檢視日期</label><input class="input" id="settingDate" type="date"></div>
+        <label class="switch-row"><span>當日休息，不接受新訂單</span><input id="closedToggle" type="checkbox" disabled></label>
+        <div class="field"><label for="specialNote">特殊營業日備註</label><input class="input" id="specialNote" placeholder="無特殊備註" disabled></div>
+        <div class="status-note">指定日期的特殊營業或休息，請在 Business_Calendar 分頁設定。</div>
       </div>
       <div class="section">
         <div class="section-title"><h3>可取餐時段</h3><span class="muted" id="pickupIntervalInfo">依 Settings 間隔產生</span></div>
@@ -204,7 +224,7 @@
         <div class="field"><label for="stockReason">庫存異動原因</label><input class="input" id="stockReason" placeholder="例如：補貨、盤點調整"></div>
         <p class="muted">數量歸零會標示售完；手動下架狀態會另外保存。</p>
       </div>
-      <button class="btn primary full" id="saveSettings" type="button">儲存設定</button>
+      <button class="btn primary full" id="saveSettings" type="button">儲存營業設定</button>
     </section>
 
     <section class="panel" id="settlementPanel" role="tabpanel" aria-labelledby="settlementTab" hidden>
@@ -283,11 +303,13 @@
           { id: 'C1935214', orderTime: `${today} 17:24`, pickupDate: today, pickupTime: '19:00–19:15', name: '王小姐', phone: '0987-111-8041', amount: 210, payment: '現金付款', status: 'pending', items: ['大腸 × 1', '百頁豆腐 × 2'], remarks: '' }
         ],
         settings: { [today]: { closed: false, openTime: '06:00', closeTime: '17:30', pickupStartTime: '16:00', pickupEndTime: '17:30', pickupIntervalMinutes: 30, disabledSlots: ['19:00-20:00','21:00-21:15'], note: '', slots: [], stock: [{ id: 'P001', name: '煙燻豆干', quantity: 12, manualHidden: false }, { id: 'P002', name: '甜不辣', quantity: 0, manualHidden: false }, { id: 'P003', name: '米血', quantity: 8, manualHidden: true }] } },
+        businessSettings: { openTime: '06:00', closeTime: '17:30', pickupStartTime: '16:00', pickupEndTime: '17:30', pickupIntervalMinutes: 30, businessDays: ['MON','TUE','WED','THU','FRI','SAT'] },
         inventoryLog: [], auditLog: [], settlements: {}
       };
       let data;
       try { data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || sample; }
       catch (_) { data = sample; }
+      if (!data.businessSettings) data.businessSettings = JSON.parse(JSON.stringify(sample.businessSettings));
       let activeFilter = 'unfinished';
       let toastTimer;
       let cancelArmed = new Set();
@@ -389,6 +411,14 @@
           return message.result;
         });
       }
+      function requestBusinessSettingsWrite(changes) {
+        const state = makeAuthState();
+        return requestOperatorResponse('operatorWrite', { action: 'updateBusinessSettings', credential: operatorCredential, state, changes }).then(message => {
+          if (message?.type !== 'XIAKA_OPERATOR_WRITE' || message.state !== state) throw new Error('GAS 寫入回覆格式錯誤');
+          if (!message.result?.success) throw new Error(message.result?.message || 'GAS 拒絕更新營業設定');
+          return message.result;
+        });
+      }
       async function loadOperatorSnapshot() {
         readOnlyData = { loading: true };
         data.orders = []; data.settings = {}; data.settlements = {};
@@ -400,9 +430,9 @@
           data.orders = Array.isArray(response.data.orders) ? response.data.orders : [];
           data.settings = {};
           data.settlements = response.data.settlements || {};
-          $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・唯讀已連線`;
+          $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・已連線`;
           $('#connectionStatus').textContent = '正式試算表已連線・訂單每30秒更新';
-          $('#connectionNotice').textContent = '訂單狀態可由作業頁更新；完整資料修改限系統管理員與店長。商品、營業設定及結算仍為唯讀。';
+          $('#connectionNotice').textContent = '訂單狀態可由作業頁更新；系統管理員與店長可修改訂餐時間、取餐時段及每週營業日。商品庫存與結算仍為唯讀。';
           renderOrders(); renderSettings(); renderSettlement();
           startOrdersAutoRefresh();
           showToast(`已讀取 ${data.orders.length} 筆訂單與 ${(response.data.products || []).length} 項商品`);
@@ -554,6 +584,15 @@
         }
         return slots;
       }
+      function renderPickupSlotList(day, settings, sourceLabel) {
+        $('#pickupIntervalInfo').textContent = `依 ${sourceLabel} 間隔產生（${settings.pickupIntervalMinutes || 30} 分鐘）`;
+        $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${readOnlyData || !canManageSchedule() ? 'disabled' : ''}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('') || `<div class="empty">${settings.closed ? '本日休息，未開放取餐時段。' : '請確認可取餐起訖時間與時段間隔。'}</div>`;
+      }
+      function updateBusinessDaysSummary() {
+        const names = { MON:'週一', TUE:'週二', WED:'週三', THU:'週四', FRI:'週五', SAT:'週六', SUN:'週日' };
+        const selected = $$('[data-business-day]:checked').map(input => input.value);
+        $('#businessDaysSummary').textContent = `目前營業日：${selected.length ? selected.map(code => names[code]).join('、') : '無（每週皆休息）'}。`;
+      }
       function parseTestClock(value) {
         const digits = String(value || '').trim();
         if (!/^\d{12}$/.test(digits)) throw new Error('請輸入 12 位數時間，格式為 yyyymmddhhmm。');
@@ -566,7 +605,7 @@
         return { date: digits.slice(0,8).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'), hour, minute, digits };
       }
       function getBusinessTestStatus(day) {
-        const source = readOnlyData?.settings || {};
+        const source = (readOnlyData && !readOnlyData.loading ? readOnlyData.settings : data.businessSettings) || {};
         const calendarDay = (readOnlyData?.businessCalendar || []).find(item => item.date === day) || {};
         const weekday = ['SUN','MON','TUE','WED','THU','FRI','SAT'][new Date(`${day}T12:00:00Z`).getUTCDay()];
         const businessDays = Array.isArray(source.businessDays) ? source.businessDays : ['MON','TUE','WED','THU','FRI','SAT','SUN'];
@@ -599,14 +638,23 @@
       }
       function renderSettings() {
         const day = $('#settingDate').value || today, settings = getDaySettings(day);
+        const config = (readOnlyData && !readOnlyData.loading ? readOnlyData.settings : data.businessSettings) || {};
+        const businessDays = Array.isArray(config.businessDays) ? config.businessDays : ['MON','TUE','WED','THU','FRI','SAT'];
+        const liveReady = !!readOnlyData && !readOnlyData.loading;
+        const canEdit = canManageSchedule() && (!readOnlyData || (liveReady && !!signedInOperator));
         $('#businessTestResult').textContent = getBusinessTestStatus(day);
-        $('#pickupIntervalInfo').textContent = `依 ${readOnlyData && !readOnlyData.loading ? 'Settings' : '示意設定'} 間隔產生（${settings.pickupIntervalMinutes || 30} 分鐘）`;
-        $('#closedToggle').checked = !!settings.closed; $('#openTime').value = settings.openTime || '16:00';
-        $('#closeTime').value = settings.closeTime || '21:30'; $('#specialNote').value = settings.note || '';
-        $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${readOnlyData || !canManageSchedule() ? 'disabled' : ''}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('') || (readOnlyData ? `<div class="empty">${settings.closed ? '本日休息，未開放取餐時段。' : '請在 Settings 設定 Pickup_Start_Time、Pickup_End_Time 與 Pickup_Slot_Interval_Minutes。'}</div>` : '');
+        $('#closedToggle').checked = !!settings.closed; $('#specialNote').value = settings.note || '';
+        $('#openTime').value = config.openTime || '06:00'; $('#closeTime').value = config.closeTime || '17:30';
+        $('#pickupStartTime').value = config.pickupStartTime || '16:00'; $('#pickupEndTime').value = config.pickupEndTime || '17:30';
+        $('#pickupIntervalMinutes').value = Number(config.pickupIntervalMinutes) || 30;
+        $$('[data-business-day]').forEach(input => { input.checked = businessDays.includes(input.value); input.disabled = !canEdit; });
+        updateBusinessDaysSummary();
+        ['openTime','closeTime','pickupStartTime','pickupEndTime','pickupIntervalMinutes'].forEach(id => { $('#'+id).disabled = !canEdit; });
+        $('#closedToggle').disabled = true; $('#specialNote').disabled = true;
+        renderPickupSlotList(day, settings, readOnlyData && !readOnlyData.loading ? 'Settings' : '示意設定');
         $('#stockList').innerHTML = settings.stock.map((item,index) => `<div class="stock-row"><div><div class="stock-name">${escapeHtml(item.name)}</div><div class="stock-sub">${item.quantity === 0 ? '庫存售完' : '可售數量'}</div></div><input class="qty-input" type="number" min="0" step="1" value="${Number(item.quantity) || 0}" data-qty="${index}" aria-label="${escapeHtml(item.name)}可售數量" ${readOnlyData ? 'disabled' : ''}><label class="switch-label"><input type="checkbox" data-hidden="${index}" ${item.manualHidden ? 'checked' : ''} ${readOnlyData ? 'disabled' : ''}>手動下架</label></div>`).join('');
-        ['closedToggle','openTime','closeTime','specialNote'].forEach(id => { $('#'+id).disabled = !!readOnlyData || !canManageSchedule(); });
-        $('#saveSettings').disabled = !!readOnlyData;
+        $('#stockReason').disabled = !!readOnlyData || !canManageSchedule();
+        $('#saveSettings').disabled = !canEdit;
       }
       function renderSettlement() {
         const day = $('#settlementDate').value || today;
@@ -670,6 +718,13 @@
       });
       $('#settingDate').value = today; $('#settlementDate').value = today; $('#orderDate').value = '';
       $('#settingDate').addEventListener('change', renderSettings);
+      $$('[data-business-day]').forEach(input => input.addEventListener('change', updateBusinessDaysSummary));
+      ['pickupStartTime','pickupEndTime','pickupIntervalMinutes'].forEach(id => $('#'+id).addEventListener('input', () => {
+        const day = $('#settingDate').value || today, settings = getDaySettings(day);
+        const interval = Number($('#pickupIntervalMinutes').value) || 30;
+        const slots = buildPickupSlots(day, $('#pickupStartTime').value, $('#pickupEndTime').value, interval, (readOnlyData?.settings || data.businessSettings || {}).disabledSlots || [], settings.closed);
+        renderPickupSlotList(day, { ...settings, pickupIntervalMinutes: interval, slots }, readOnlyData && !readOnlyData.loading ? 'Settings' : '目前輸入值');
+      }));
       $('#applyTestClock').addEventListener('click', () => {
         try {
           testClockOverride = parseTestClock($('#testClockInput').value);
@@ -684,18 +739,53 @@
       });
       $('#slotList').addEventListener('click', event => {
         const button = event.target.closest('[data-slot]'); if (!button || readOnlyData || !canManageSchedule()) return;
-        const settings = getDaySettings($('#settingDate').value); settings.slots[Number(button.dataset.slot)].enabled = !settings.slots[Number(button.dataset.slot)].enabled; renderSettings(); saveLocal();
+        const settings = getDaySettings($('#settingDate').value || today), slot = settings.slots[Number(button.dataset.slot)];
+        const disabledRange = String(slot.time || '').replace('–','-');
+        settings.disabledSlots = settings.disabledSlots || [];
+        if (slot.enabled) settings.disabledSlots.push(disabledRange);
+        else settings.disabledSlots = settings.disabledSlots.filter(range => String(range).replace(/\s/g,'') !== disabledRange.replace(/\s/g,''));
+        renderSettings(); saveLocal();
       });
-      $('#saveSettings').addEventListener('click', () => {
-        if (readOnlyData) return showToast('目前為唯讀連線，尚未開放設定寫入');
-        const day = $('#settingDate').value, settings = getDaySettings(day);
+      $('#saveSettings').addEventListener('click', async () => {
+        if (readOnlyData?.loading) return showToast('設定資料載入中，請稍後再儲存');
+        if (!canManageSchedule()) return showToast('只有系統管理員或店長可以修改營業設定');
+        const openTime = $('#openTime').value.trim(), closeTime = $('#closeTime').value.trim();
+        const pickupStartTime = $('#pickupStartTime').value.trim(), pickupEndTime = $('#pickupEndTime').value.trim();
+        const pickupIntervalMinutes = Number($('#pickupIntervalMinutes').value);
+        const businessDays = $$('[data-business-day]:checked').map(input => input.value);
+        const clockPattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+        if (![openTime, closeTime, pickupStartTime, pickupEndTime].every(value => clockPattern.test(value))) return showToast('時間請使用 24 小時制 HH:mm，例如 16:00');
+        if (pickupEndTime <= pickupStartTime) return showToast('可取餐結束時間必須晚於開始時間');
+        if (!Number.isInteger(pickupIntervalMinutes) || pickupIntervalMinutes < 1 || pickupIntervalMinutes > 720) return showToast('取餐時段間隔需為 1 至 720 的整數分鐘');
+        const changes = { openTime, closeTime, pickupStartTime, pickupEndTime, pickupIntervalMinutes, businessDays };
+        if (readOnlyData) {
+          if (!signedInOperator || !confirm('確認更新試算表中的營業時間、取餐時段及每週營業日？')) return;
+          changes.expected = {
+            openTime: readOnlyData.settings.openTime || '', closeTime: readOnlyData.settings.closeTime || '',
+            pickupStartTime: readOnlyData.settings.pickupStartTime || '', pickupEndTime: readOnlyData.settings.pickupEndTime || '',
+            pickupIntervalMinutes: readOnlyData.settings.pickupIntervalMinutes || 30,
+            businessDays: readOnlyData.settings.businessDays || []
+          };
+          $('#saveSettings').disabled = true;
+          try {
+            await requestBusinessSettingsWrite(changes);
+            await loadOperatorSnapshot();
+            showToast('營業規則已更新並記錄異動');
+          } catch (error) { showToast(error.message); renderSettings(); }
+          return;
+        }
+
+        const day = $('#settingDate').value || today, settings = getDaySettings(day);
         const oldStock = JSON.parse(JSON.stringify(settings.stock));
-        settings.closed = $('#closedToggle').checked; settings.openTime = $('#openTime').value; settings.closeTime = $('#closeTime').value; settings.note = $('#specialNote').value.trim();
+        data.businessSettings = { openTime, closeTime, pickupStartTime, pickupEndTime, pickupIntervalMinutes, businessDays };
+        settings.openTime = openTime; settings.closeTime = closeTime; settings.pickupStartTime = pickupStartTime;
+        settings.pickupEndTime = pickupEndTime; settings.pickupIntervalMinutes = pickupIntervalMinutes;
+        settings.slots = buildPickupSlots(day, pickupStartTime, pickupEndTime, pickupIntervalMinutes, settings.disabledSlots || [], !!settings.closed);
         $$('[data-qty]').forEach(input => { settings.stock[Number(input.dataset.qty)].quantity = Math.max(0, Number(input.value) || 0); });
         $$('[data-hidden]').forEach(input => { settings.stock[Number(input.dataset.hidden)].manualHidden = input.checked; });
         const reason = $('#stockReason').value.trim();
         settings.stock.forEach((item,index) => { if (item.quantity !== oldStock[index].quantity) data.inventoryLog.unshift({ at: new Date().toISOString(), actor: role(), productId: item.id, name: item.name, before: oldStock[index].quantity, after: item.quantity, reason: reason || '未填寫（示意）' }); });
-        saveLocal(); renderSettings(); showToast('示意設定已儲存在此瀏覽器');
+        saveLocal(); renderSettings(); showToast('示意營業設定已儲存在此瀏覽器');
       });
       $('#settlementDate').addEventListener('change', renderSettlement);
       $('#authSignOut').addEventListener('click', () => {
