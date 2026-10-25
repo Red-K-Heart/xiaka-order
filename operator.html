@@ -188,14 +188,14 @@
         <div class="field"><label for="settingDate">設定日期</label><input class="input" id="settingDate" type="date"></div>
         <label class="switch-row"><span>當日休息，不接受新訂單</span><input id="closedToggle" type="checkbox"></label>
         <div class="field-inline">
-          <div class="field"><label for="openTime">可訂餐開始時間</label><input class="input" id="openTime" type="time" value="16:00"></div>
-          <div class="field"><label for="closeTime">可訂餐結束時間</label><input class="input" id="closeTime" type="time" value="21:30"></div>
+          <div class="field"><label for="openTime">可訂餐開始時間（24 小時制）</label><input class="input" id="openTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="16:00"></div>
+          <div class="field"><label for="closeTime">可訂餐結束時間（24 小時制）</label><input class="input" id="closeTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="21:30"></div>
         </div>
         <div class="field"><label for="specialNote">特殊營業日備註</label><input class="input" id="specialNote" placeholder="選填"></div>
         <div class="status-note">停用取餐時段只會阻止新訂單，既有訂單保留原時段。</div>
       </div>
       <div class="section">
-        <div class="section-title"><h3>可取餐時段</h3><span class="muted">讀取 Pickup_Slots</span></div>
+        <div class="section-title"><h3>可取餐時段</h3><span class="muted">依 Settings 間隔產生</span></div>
         <div id="slotList"></div>
       </div>
       <div class="section">
@@ -508,8 +508,10 @@
           const pickupStart = calendarDay.pickupStartTime || source.pickupStartTime || '';
           const pickupEnd = calendarDay.pickupEndTime || source.pickupEndTime || '';
           const interval = Number(calendarDay.pickupIntervalMinutes || source.pickupIntervalMinutes) || 30;
-          let slots = (readOnlyData.pickupSlots || []).filter(slot => !slot.date || slot.date === day);
-          if (!slots.length && pickupStart && pickupEnd) {
+          // 取餐時段以 Settings 的起訖時間與間隔產生；不使用舊 Pickup_Slots
+          // 明細，避免其中 15 分鐘一格的資料覆蓋目前設定的間隔。
+          let slots = [];
+          if (pickupStart && pickupEnd) {
             const toMinutes = value => { const [h,m] = value.split(':').map(Number); return h * 60 + m; };
             const format = value => `${String(Math.floor(value / 60)).padStart(2,'0')}:${String(value % 60).padStart(2,'0')}`;
             const disabled = source.disabledSlots || [];
