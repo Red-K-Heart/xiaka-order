@@ -2030,6 +2030,40 @@ function loadProductsFromGas(successCallback, errorCallback) {
   }
 
 
+  function formatOrderDateTime(value) {
+    if (value === undefined || value === null || String(value).trim() === '') {
+      return '';
+    }
+
+    const text = String(value).trim();
+    const dateOnlyMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnlyMatch) {
+      return `${dateOnlyMatch[1]}-${dateOnlyMatch[2]}-${dateOnlyMatch[3]}-00:00`;
+    }
+
+    const date = new Date(text);
+    if (Number.isNaN(date.getTime())) {
+      return text;
+    }
+
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Taipei',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(date);
+    const values = {};
+    parts.forEach(part => {
+      if (part.type !== 'literal') values[part.type] = part.value;
+    });
+
+    return `${values.year}-${values.month}-${values.day}-${values.hour}:${values.minute}`;
+  }
+
+
   function renderOrderQueryResult(order) {
     const container = document.getElementById('orderQueryResult');
     container.textContent = '';
@@ -2060,9 +2094,9 @@ function loadProductsFromGas(successCallback, errorCallback) {
     addRow('付款狀態', order.payment_status);
     addRow('取餐類型', order.order_type);
     addRow('訂購人', order.customer_name);
-    addRow('取餐日期', order.pickup_date);
+    addRow('取餐日期', formatOrderDateTime(order.pickup_date));
     addRow('取餐時段', order.pickup_time_slot);
-    addRow('訂單時間', order.order_time);
+    addRow('訂單時間', formatOrderDateTime(order.order_time));
     addRow('胡椒鹽', order.overall_pepper);
     addRow('辣椒粉', order.overall_chili_powder);
     addRow('辣醬', order.overall_chili_sauce);
