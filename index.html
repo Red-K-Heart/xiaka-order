@@ -2064,6 +2064,60 @@ function loadProductsFromGas(successCallback, errorCallback) {
   }
 
 
+  async function cancelQueriedOrder(order, button) {
+    const orderId = String(order.customer_order_code || order.order_id || '').trim();
+    const phone = document.getElementById('orderQueryPhone').value
+      .trim()
+      .replace(/[\s-]/g, '');
+
+    if (!orderId || !phone) {
+      showOrderQueryError('訂單編號或完整電話號碼遺失，請重新查詢。');
+      return;
+    }
+
+    if (!window.confirm('確定取消這筆訂單嗎？取消後訂單狀態會改為「已取消」。')) {
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = '取消處理中...';
+
+    try {
+      await fetch(GAS_WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        credentials: 'omit',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+        },
+        body: new URLSearchParams({
+          customerCancel: '1',
+          customerCancelPayload: JSON.stringify({ orderId, phone })
+        }).toString()
+      });
+
+      const updatedOrder = await new Promise((resolve, reject) => {
+        callGasApi('orderStatus', resolve, reject, { orderId, phone });
+      });
+
+      if (!updatedOrder || updatedOrder.status !== 'success') {
+        throw new Error(updatedOrder?.message || '取消結果確認失敗，請重新查詢。');
+      }
+
+      if (!['已取消', '取消', 'cancelled'].includes(String(updatedOrder.order_status || '').trim().toLowerCase())) {
+        throw new Error('取消狀態尚未更新，請稍後重新查詢或聯絡店家。');
+      }
+
+      renderOrderQueryResult(updatedOrder);
+      window.alert('訂單已取消。');
+    } catch (error) {
+      showOrderQueryError(error && error.message ? error.message : '取消訂單失敗，請稍後再試。');
+      button.disabled = false;
+      button.textContent = '取消訂單';
+    }
+  }
+
+
   function renderOrderQueryResult(order) {
     const container = document.getElementById('orderQueryResult');
     container.textContent = '';
@@ -2165,6 +2219,18 @@ function loadProductsFromGas(successCallback, errorCallback) {
         list.appendChild(row);
       });
       container.appendChild(list);
+    }
+
+    const currentStatus = String(order.order_status || '').trim();
+    const isCancelled = ['已取消', '取消', 'cancelled'].includes(currentStatus.toLowerCase());
+    const isCompleted = ['已完成', '完成', 'completed'].includes(currentStatus.toLowerCase());
+    if (!isCancelled && !isCompleted) {
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'w-full rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black px-4 py-3 shadow-md';
+      cancelButton.textContent = '取消訂單';
+      cancelButton.addEventListener('click', () => cancelQueriedOrder(order, cancelButton));
+      container.appendChild(cancelButton);
     }
 
     container.classList.remove('hidden');
