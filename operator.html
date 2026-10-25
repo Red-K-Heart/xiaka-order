@@ -148,7 +148,7 @@
       </select>
     </div>
     <div class="sync-line"><span class="sync-dot" aria-hidden="true"></span><span id="connectionStatus">示意模式・資料只存在這個瀏覽器</span></div>
-    <div class="auth-line"><span class="auth-user" id="authUserStatus" aria-live="polite">尚未登入 Google</span><div class="auth-controls"><button class="btn" id="openGasConnection" type="button">啟用連線視窗</button><div id="googleSignIn" hidden></div><button class="btn" id="authSignOut" type="button" hidden>登出</button></div></div>
+    <div class="auth-line"><span class="auth-user" id="authUserStatus" aria-live="polite">尚未登入 Google</span><div class="auth-controls"><div id="googleSignIn"></div><button class="btn" id="authSignOut" type="button" hidden>登出</button></div></div>
     <div class="demo-ribbon" id="connectionNotice">尚未連接 Google 登入或試算表。此頁顯示的是本機示意資料。</div>
   </header>
 
@@ -253,14 +253,11 @@
       const GOOGLE_CLIENT_ID = '384565693899-acvihnpcsrtpllgoi5kf9b9amks3tb1m.apps.googleusercontent.com';
       const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzhJjRbPpSoad-yC4CWKBepUWLTs36aZytQgmBhhqVMHyzeUgGJByOK0jxlh8EpsAis/exec';
       const roleSelect = $('#roleSelect');
-      const GAS_REPLY_WINDOW_NAME = 'xiakaOperatorGasReply';
-      let gasReplyWindow = null;
       let pendingAuthState = '';
       let authTimeout;
       let signedInOperator = null;
       let operatorCredential = '';
       let readOnlyData = null;
-      const pendingOperatorReads = new Map();
       const now = new Date();
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
       const dateText = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', weekday: 'long', month: 'numeric', day: 'numeric' }).format(now);
@@ -296,43 +293,61 @@
         const bytes = new Uint8Array(24); crypto.getRandomValues(bytes);
         return [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
       }
-      function openGasConnectionWindow() {
-        if (gasReplyWindow && !gasReplyWindow.closed) {
-          gasReplyWindow.focus();
-          $('#openGasConnection').hidden = true;
-          $('#googleSignIn').hidden = false;
-          $('#authUserStatus').textContent = '連線視窗已就緒，請使用 Google 登入';
-          return;
-        }
-        gasReplyWindow = window.open('', GAS_REPLY_WINDOW_NAME, 'popup,width=480,height=300,resizable=yes,scrollbars=yes');
-        if (!gasReplyWindow) {
-          $('#authUserStatus').textContent = '連線視窗被封鎖，請允許此網站開啟彈出式視窗後重試';
-          showToast('請允許此網站開啟彈出式視窗');
-          return;
-        }
-        gasReplyWindow.name = GAS_REPLY_WINDOW_NAME;
-        gasReplyWindow.document.title = '呷喀作業頁資料連線';
-        gasReplyWindow.document.body.innerHTML = '<main style="font:16px system-ui,sans-serif;padding:24px;color:#4b2d1c"><h2>作業頁安全連線</h2><p>此視窗會接收測試 GAS 的驗證與唯讀資料回覆。請保持開啟，讀取完成後會自動關閉。</p></main>';
-        $('#openGasConnection').hidden = true;
-        $('#googleSignIn').hidden = false;
-        $('#authUserStatus').textContent = '連線視窗已就緒，請使用 Google 登入';
+      function jsonpOperatorCall(state, mode, part) {
+        const callbackName = `__xiakaOperatorPoll${Date.now()}${Math.floor(Math.random() * 100000)}`;
+        const script = document.createElement('script');
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => finish(new Error('GAS 讀取回覆逾時')), 12000);
+          function finish(error, value) {
+            clearTimeout(timer);
+            delete window[callbackName];
+            script.remove();
+            error ? reject(error) : resolve(value);
+          }
+          window[callbackName] = value => finish(null, value);
+          script.onerror = () => finish(new Error('無法載入 GAS JSONP 回覆'));
+          const query = new URLSearchParams({ api: 'operatorPoll', state, mode, callback: callbackName });
+          if (part !== undefined) query.set('part', String(part));
+          script.src = `${GAS_WEB_APP_URL}?${query.toString()}`;
+          document.head.appendChild(script);
+        });
       }
-      $('#openGasConnection').addEventListener('click', openGasConnectionWindow);
+      async function requestOperatorResponse(flag, payload) {
+        const state = payload.state;
+        const body = new URLSearchParams({ [flag]: '1', payload: JSON.stringify(payload) });
+        const post = fetch(GAS_WEB_APP_URL, {
+          method: 'POST', mode: 'no-cors', credentials: 'omit',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+          body: body.toString()
+        });
+        let postTimer;
+        try {
+          await Promise.race([post, new Promise((_, reject) => { postTimer = setTimeout(() => reject(new Error('GAS 請求逾時')), 30000); })]);
+        } finally { clearTimeout(postTimer); }
+        const deadline = Date.now() + 30000;
+        let meta;
+        do {
+          meta = await jsonpOperatorCall(state, 'meta');
+          if (meta && meta.ready) break;
+          if (meta && meta.error) throw new Error(meta.error);
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } while (Date.now() < deadline);
+        if (!meta || !meta.ready) throw new Error('等待 GAS 驗證回覆逾時，請重新登入');
+        if (!Number.isInteger(meta.chunkCount) || meta.chunkCount < 1 || meta.chunkCount > 500) throw new Error('GAS 回覆格式錯誤');
+        let json = '';
+        for (let part = 0; part < meta.chunkCount; part++) {
+          const chunk = await jsonpOperatorCall(state, 'chunk', part);
+          if (!chunk || chunk.error || typeof chunk.value !== 'string') throw new Error(chunk?.error || 'GAS 回覆資料不完整');
+          json += chunk.value;
+        }
+        return JSON.parse(json);
+      }
       function requestOperatorSnapshot() {
         const state = makeAuthState();
-        if (!gasReplyWindow || gasReplyWindow.closed) return Promise.reject(new Error('連線視窗已關閉，請登出後重新啟用連線視窗'));
-        return new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            pendingOperatorReads.delete(state);
-            reject(new Error('讀取資料逾時，請重新登入後再試'));
-          }, 20000);
-          pendingOperatorReads.set(state, { resolve, reject, timeout });
-          const form = document.createElement('form');
-          form.method = 'POST'; form.action = GAS_WEB_APP_URL; form.target = GAS_REPLY_WINDOW_NAME; form.hidden = true;
-          const addField = (name, value) => { const field = document.createElement('input'); field.type = 'hidden'; field.name = name; field.value = value; form.appendChild(field); };
-          addField('operatorRead', '1');
-          addField('payload', JSON.stringify({ action: 'readSnapshot', credential: operatorCredential, state }));
-          document.body.appendChild(form); form.submit(); form.remove();
+        return requestOperatorResponse('operatorRead', { action: 'readSnapshot', credential: operatorCredential, state }).then(message => {
+          if (message?.type !== 'XIAKA_OPERATOR_READ' || message.state !== state) throw new Error('GAS 唯讀回覆格式錯誤');
+          if (!message.result?.success || !message.result.data) throw new Error(message.result?.message || 'GAS 拒絕讀取資料');
+          return message.result;
         });
       }
       async function loadOperatorSnapshot() {
@@ -359,9 +374,7 @@
       function showAuthError(message) {
         clearTimeout(authTimeout); pendingAuthState = '';
         $('#authUserStatus').textContent = message;
-        const popupReady = gasReplyWindow && !gasReplyWindow.closed;
-        $('#openGasConnection').hidden = !!popupReady;
-        $('#googleSignIn').hidden = !popupReady; $('#authSignOut').hidden = true;
+        $('#googleSignIn').hidden = false; $('#authSignOut').hidden = true;
       }
       function handleGoogleCredential(response) {
         if (!response?.credential) { showAuthError('未取得 Google 登入憑證'); return; }
@@ -369,22 +382,26 @@
           showAuthError('請先設定測試用 GAS /exec 網址'); return;
         }
         operatorCredential = response.credential;
-        if (!gasReplyWindow || gasReplyWindow.closed) {
-          showAuthError('請先按「啟用連線視窗」，再重新按 Google 登入');
-          $('#openGasConnection').hidden = false;
-          return;
-        }
         pendingAuthState = makeAuthState();
         $('#authUserStatus').textContent = '正在由 GAS 驗證帳號與角色…';
         $('#googleSignIn').hidden = true;
-        const form = document.createElement('form');
-        form.method = 'POST'; form.action = GAS_WEB_APP_URL; form.target = GAS_REPLY_WINDOW_NAME; form.hidden = true;
-        const addField = (name, value) => { const field = document.createElement('input'); field.type = 'hidden'; field.name = name; field.value = value; form.appendChild(field); };
-        addField('operatorAuth', '1');
-        addField('payload', JSON.stringify({ credential: response.credential, state: pendingAuthState }));
-        document.body.appendChild(form); form.submit(); form.remove();
         clearTimeout(authTimeout);
-        authTimeout = setTimeout(() => showAuthError('登入驗證逾時，請重試'), 20000);
+        authTimeout = setTimeout(() => showAuthError('登入驗證逾時，請重試'), 65000);
+        requestOperatorResponse('operatorAuth', { credential: response.credential, state: pendingAuthState }).then(message => {
+          if (!message || message.type !== 'XIAKA_OPERATOR_AUTH' || message.state !== pendingAuthState) return;
+          clearTimeout(authTimeout); pendingAuthState = '';
+          if (!message.result?.success || !message.result.user) {
+            showAuthError(message.result?.message || '此 Google 帳號未獲授權'); return;
+          }
+          signedInOperator = message.result.user;
+          if (!['系統管理員', '店長', '員工'].includes(signedInOperator.role)) {
+            signedInOperator = null; showAuthError('帳號角色設定無效，請聯絡管理者'); return;
+          }
+          roleSelect.value = signedInOperator.role; roleSelect.disabled = true;
+          $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}`;
+          $('#authSignOut').hidden = false;
+          loadOperatorSnapshot();
+        }).catch(error => showAuthError(error.message));
       }
       function initializeGoogleSignIn() {
         if (!window.google?.accounts?.id) return;
@@ -396,31 +413,6 @@
       googleIdentityScript.onload = initializeGoogleSignIn;
       googleIdentityScript.onerror = () => { $('#authUserStatus').textContent = 'Google 登入元件載入失敗'; };
       document.head.appendChild(googleIdentityScript);
-      window.addEventListener('message', event => {
-        if (event.source !== gasReplyWindow || event.origin !== 'https://script.google.com' && !event.origin.endsWith('.googleusercontent.com')) return;
-        const message = event.data;
-        if (message?.type === 'XIAKA_OPERATOR_READ') {
-          const pending = pendingOperatorReads.get(message.state);
-          if (!pending) return;
-          clearTimeout(pending.timeout); pendingOperatorReads.delete(message.state);
-          if (message.result?.success && message.result.data) pending.resolve(message.result);
-          else pending.reject(new Error(message.result?.message || 'GAS 拒絕讀取資料'));
-          return;
-        }
-        if (!message || message.type !== 'XIAKA_OPERATOR_AUTH' || message.state !== pendingAuthState) return;
-        clearTimeout(authTimeout); pendingAuthState = '';
-        if (!message.result?.success || !message.result.user) {
-          showAuthError(message.result?.message || '此 Google 帳號未獲授權'); return;
-        }
-        signedInOperator = message.result.user;
-        if (!['系統管理員', '店長', '員工'].includes(signedInOperator.role)) {
-          signedInOperator = null; showAuthError('帳號角色設定無效，請聯絡管理者'); return;
-        }
-        roleSelect.value = signedInOperator.role; roleSelect.disabled = true;
-        $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}`;
-        $('#authSignOut').hidden = false;
-        loadOperatorSnapshot();
-      });
       function showToast(message) {
         const toast = $('#toast'); toast.textContent = message; toast.hidden = false;
         clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.hidden = true; }, 2600);
@@ -571,9 +563,7 @@
         signedInOperator = null; operatorCredential = ''; readOnlyData = null; data = JSON.parse(JSON.stringify(sample));
         roleSelect.disabled = false; roleSelect.value = '店長';
         if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
-        if (gasReplyWindow && !gasReplyWindow.closed) gasReplyWindow.close();
-        gasReplyWindow = null;
-        $('#authUserStatus').textContent = '已登出 Google'; $('#openGasConnection').hidden = false; $('#googleSignIn').hidden = true; $('#authSignOut').hidden = true;
+        $('#authUserStatus').textContent = '已登出 Google'; $('#googleSignIn').hidden = false; $('#authSignOut').hidden = true;
         $('#connectionStatus').textContent = '示意模式・資料只存在這個瀏覽器';
         $('#connectionNotice').textContent = '尚未連接 Google 登入或試算表。此頁顯示的是本機示意資料。';
         renderSettings(); renderSettlement();
