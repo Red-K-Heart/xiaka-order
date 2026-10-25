@@ -195,7 +195,7 @@
         <div class="status-note">停用取餐時段只會阻止新訂單，既有訂單保留原時段。</div>
       </div>
       <div class="section">
-        <div class="section-title"><h3>可取餐時段</h3><span class="muted">依 Settings 間隔產生</span></div>
+        <div class="section-title"><h3>可取餐時段</h3><span class="muted" id="pickupIntervalInfo">依 Settings 間隔產生</span></div>
         <div id="slotList"></div>
       </div>
       <div class="section">
@@ -282,7 +282,7 @@
           { id: 'B1810307', orderTime: `${today} 17:03`, pickupDate: today, pickupTime: '18:15–18:30', name: '陳先生', phone: '0918-222-5912', amount: 120, payment: '現金付款', status: 'preparing', items: ['雞胗 × 1', '米血 × 2'], remarks: '' },
           { id: 'C1935214', orderTime: `${today} 17:24`, pickupDate: today, pickupTime: '19:00–19:15', name: '王小姐', phone: '0987-111-8041', amount: 210, payment: '現金付款', status: 'pending', items: ['大腸 × 1', '百頁豆腐 × 2'], remarks: '' }
         ],
-        settings: { [today]: { closed: false, openTime: '16:00', closeTime: '21:30', note: '', slots: [{ time: '17:00–17:15', enabled: true }, { time: '17:15–17:30', enabled: true }, { time: '18:00–18:15', enabled: true }, { time: '19:00–19:15', enabled: false }], stock: [{ id: 'P001', name: '煙燻豆干', quantity: 12, manualHidden: false }, { id: 'P002', name: '甜不辣', quantity: 0, manualHidden: false }, { id: 'P003', name: '米血', quantity: 8, manualHidden: true }] } },
+        settings: { [today]: { closed: false, openTime: '06:00', closeTime: '17:30', pickupStartTime: '16:00', pickupEndTime: '17:30', pickupIntervalMinutes: 30, disabledSlots: ['19:00-20:00','21:00-21:15'], note: '', slots: [], stock: [{ id: 'P001', name: '煙燻豆干', quantity: 12, manualHidden: false }, { id: 'P002', name: '甜不辣', quantity: 0, manualHidden: false }, { id: 'P003', name: '米血', quantity: 8, manualHidden: true }] } },
         inventoryLog: [], auditLog: [], settlements: {}
       };
       let data;
@@ -508,36 +508,51 @@
           const pickupStart = calendarDay.pickupStartTime || source.pickupStartTime || '';
           const pickupEnd = calendarDay.pickupEndTime || source.pickupEndTime || '';
           const interval = Number(calendarDay.pickupIntervalMinutes || source.pickupIntervalMinutes) || 30;
-          // 取餐時段以 Settings 的起訖時間與間隔產生；不使用舊 Pickup_Slots
-          // 明細，避免其中 15 分鐘一格的資料覆蓋目前設定的間隔。
-          let slots = [];
-          if (pickupStart && pickupEnd) {
-            const toMinutes = value => { const [h,m] = value.split(':').map(Number); return h * 60 + m; };
-            const format = value => `${String(Math.floor(value / 60)).padStart(2,'0')}:${String(value % 60).padStart(2,'0')}`;
-            const disabled = source.disabledSlots || [];
-            for (let start = toMinutes(pickupStart); start < toMinutes(pickupEnd); start += interval) {
-              const end = Math.min(start + interval, toMinutes(pickupEnd));
-              const time = `${format(start)}–${format(end)}`;
-              const blocked = disabled.some(range => {
-                const parts = String(range).replace(/\s/g,'').split('-');
-                if (parts.length !== 2) return false;
-                try { return start < toMinutes(parts[1]) && end > toMinutes(parts[0]); } catch (_) { return false; }
-              });
-              slots.push({ date: day, time, enabled: !isClosed && !blocked });
-            }
-          }
-          if (isClosed) slots = slots.map(slot => ({ ...slot, enabled: false }));
+          const slots = buildPickupSlots(day, pickupStart, pickupEnd, interval, source.disabledSlots || [], isClosed);
           return {
             closed: isClosed,
             openTime,
             closeTime,
+            pickupStartTime: pickupStart,
+            pickupEndTime: pickupEnd,
+            pickupIntervalMinutes: interval,
             note: calendarDay.note || source.note || '',
             slots,
             stock: readOnlyData.products || []
           };
         }
         if (!data.settings[day]) data.settings[day] = JSON.parse(JSON.stringify(sample.settings[today]));
-        return data.settings[day];
+        const demo = data.settings[day];
+        demo.pickupStartTime = demo.pickupStartTime || '16:00';
+        demo.pickupEndTime = demo.pickupEndTime || '17:30';
+        demo.pickupIntervalMinutes = Number(demo.pickupIntervalMinutes) || 30;
+        demo.disabledSlots = demo.disabledSlots || [];
+        demo.slots = buildPickupSlots(day, demo.pickupStartTime, demo.pickupEndTime, demo.pickupIntervalMinutes, demo.disabledSlots, !!demo.closed);
+        return demo;
+      }
+      function buildPickupSlots(day, startTime, endTime, intervalValue, disabledRanges, closed) {
+        const toMinutes = value => {
+          const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+          return match ? Number(match[1]) * 60 + Number(match[2]) : NaN;
+        };
+        const startAt = toMinutes(startTime), endAt = toMinutes(endTime);
+        const interval = Number(intervalValue) || 30;
+        if (!Number.isFinite(startAt) || !Number.isFinite(endAt) || endAt <= startAt || interval <= 0) return [];
+        const format = value => `${String(Math.floor(value / 60)).padStart(2,'0')}:${String(value % 60).padStart(2,'0')}`;
+        const toBlockedMinutes = range => {
+          const match = String(range || '').replace(/\s/g,'').match(/^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/);
+          return match ? [toMinutes(match[1]), toMinutes(match[2])] : null;
+        };
+        const slots = [];
+        for (let start = startAt; start < endAt; start += interval) {
+          const end = Math.min(start + interval, endAt);
+          const blocked = (disabledRanges || []).some(range => {
+            const bounds = toBlockedMinutes(range);
+            return bounds && start < bounds[1] && end > bounds[0];
+          });
+          slots.push({ date: day, time: `${format(start)}–${format(end)}`, enabled: !closed && !blocked });
+        }
+        return slots;
       }
       function parseTestClock(value) {
         const digits = String(value || '').trim();
@@ -585,6 +600,7 @@
       function renderSettings() {
         const day = $('#settingDate').value || today, settings = getDaySettings(day);
         $('#businessTestResult').textContent = getBusinessTestStatus(day);
+        $('#pickupIntervalInfo').textContent = `依 ${readOnlyData && !readOnlyData.loading ? 'Settings' : '示意設定'} 間隔產生（${settings.pickupIntervalMinutes || 30} 分鐘）`;
         $('#closedToggle').checked = !!settings.closed; $('#openTime').value = settings.openTime || '16:00';
         $('#closeTime').value = settings.closeTime || '21:30'; $('#specialNote').value = settings.note || '';
         $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${readOnlyData || !canManageSchedule() ? 'disabled' : ''}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('') || (readOnlyData ? `<div class="empty">${settings.closed ? '本日休息，未開放取餐時段。' : '請在 Settings 設定 Pickup_Start_Time、Pickup_End_Time 與 Pickup_Slot_Interval_Minutes。'}</div>` : '');
