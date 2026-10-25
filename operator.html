@@ -103,6 +103,13 @@
     .weekday-option:has(input:checked) { border-color: var(--brand); color: var(--brand-fg); background: var(--brand); }
     .weekday-option input { width: 17px; height: 17px; accent-color: var(--brand); }
     .weekday-option input:disabled { opacity: .65; }
+    .date-choice-list { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 5px; padding: 2px 1px 8px; }
+    .date-choice { min-width: 0; min-height: 60px; display: grid; place-content: center; gap: 3px; padding: 6px 2px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: var(--surface-soft); text-align: center; }
+    .date-choice strong { color: inherit; font-size: 12px; }
+    .date-choice span { font-size: 11px; }
+    .date-choice[aria-pressed="true"] { border-color: var(--brand); color: var(--brand-fg); background: var(--brand); }
+    .schedule-date { margin: 0 0 10px; color: var(--brand); font-size: 13px; font-weight: 700; }
+    #selectedDateSchedule { white-space: pre-line; }
     .field-inline { align-items: flex-end; }
     .field-inline .field { flex: 1; }
     .switch-row { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
@@ -192,6 +199,7 @@
       </div>
       <div class="section">
         <div class="section-title"><h3>營業規則設定</h3><span class="muted">系統管理員／店長可編輯</span></div>
+        <p class="schedule-date" id="scheduleTargetDate" aria-live="polite"></p>
         <div class="field-inline">
           <div class="field"><label for="openTime">可訂餐開始時間（24 小時制）</label><input class="input" id="openTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="16:00"></div>
           <div class="field"><label for="closeTime">可訂餐結束時間（24 小時制）</label><input class="input" id="closeTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="21:30"></div>
@@ -209,10 +217,13 @@
       </div>
       <div class="section">
         <div class="section-title"><h3>日期狀態檢視</h3><span class="muted">依週規則與特殊日判斷</span></div>
-        <div class="field"><label for="settingDate">檢視日期</label><input class="input" id="settingDate" type="date"></div>
-        <label class="switch-row"><span>當日休息，不接受新訂單</span><input id="closedToggle" type="checkbox" disabled></label>
-        <div class="field"><label for="specialNote">特殊營業日備註</label><input class="input" id="specialNote" placeholder="無特殊備註" disabled></div>
-        <div class="status-note">指定日期的特殊營業或休息，請在 Business_Calendar 分頁設定。</div>
+        <p class="muted">選擇當日或後續 6 天，查看該日的營業規則與特殊狀態。</p>
+        <div class="date-choice-list" id="businessDateOptions" role="group" aria-label="選擇營業日期"></div>
+        <input id="settingDate" type="date" hidden>
+        <input id="closedToggle" type="checkbox" hidden disabled>
+        <input id="specialNote" type="text" hidden disabled>
+        <div class="status-note" id="selectedDateSchedule" aria-live="polite"></div>
+        <div class="muted">指定日期的特殊營業或休息，請在 Business_Calendar 分頁設定。</div>
       </div>
       <div class="section">
         <div class="section-title"><h3>可取餐時段</h3><span class="muted" id="pickupIntervalInfo">依 Settings 間隔產生</span></div>
@@ -593,6 +604,23 @@
         const selected = $$('[data-business-day]:checked').map(input => input.value);
         $('#businessDaysSummary').textContent = `目前營業日：${selected.length ? selected.map(code => names[code]).join('、') : '無（每週皆休息）'}。`;
       }
+      function dateParts(day) {
+        const [year, month, date] = String(day).split('-').map(Number);
+        const value = new Date(Date.UTC(year, month - 1, date, 12));
+        const weekday = ['週日','週一','週二','週三','週四','週五','週六'][value.getUTCDay()];
+        return { value, year, month, date, weekday };
+      }
+      function renderBusinessDateOptions(selectedDay) {
+        const baseDay = testClockOverride?.rangeStartDate || testClockOverride?.date || today;
+        const base = dateParts(baseDay).value;
+        const choices = Array.from({ length: 7 }, (_, index) => {
+          const date = new Date(base); date.setUTCDate(date.getUTCDate() + index);
+          const day = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2,'0')}-${String(date.getUTCDate()).padStart(2,'0')}`;
+          const parts = dateParts(day);
+          return `<button class="date-choice" type="button" data-business-date="${day}" aria-pressed="${day === selectedDay}"><strong>${parts.month}/${String(parts.date).padStart(2,'0')}</strong><span>${parts.weekday}</span></button>`;
+        });
+        $('#businessDateOptions').innerHTML = choices.join('');
+      }
       function parseTestClock(value) {
         const digits = String(value || '').trim();
         if (!/^\d{12}$/.test(digits)) throw new Error('請輸入 12 位數時間，格式為 yyyymmddhhmm。');
@@ -642,6 +670,9 @@
         const businessDays = Array.isArray(config.businessDays) ? config.businessDays : ['MON','TUE','WED','THU','FRI','SAT'];
         const liveReady = !!readOnlyData && !readOnlyData.loading;
         const canEdit = canManageSchedule() && (!readOnlyData || (liveReady && !!signedInOperator));
+        const parts = dateParts(day);
+        $('#scheduleTargetDate').textContent = `目前檢視／設定日期：${day}（${parts.weekday}）`;
+        renderBusinessDateOptions(day);
         $('#businessTestResult').textContent = getBusinessTestStatus(day);
         $('#closedToggle').checked = !!settings.closed; $('#specialNote').value = settings.note || '';
         $('#openTime').value = config.openTime || '06:00'; $('#closeTime').value = config.closeTime || '17:30';
@@ -649,6 +680,12 @@
         $('#pickupIntervalMinutes').value = Number(config.pickupIntervalMinutes) || 30;
         $$('[data-business-day]').forEach(input => { input.checked = businessDays.includes(input.value); input.disabled = !canEdit; });
         updateBusinessDaysSummary();
+        const weekdayNames = { MON:'週一', TUE:'週二', WED:'週三', THU:'週四', FRI:'週五', SAT:'週六', SUN:'週日' };
+        const weekdayCode = ['SUN','MON','TUE','WED','THU','FRI','SAT'][parts.value.getUTCDay()];
+        const calendarDay = (readOnlyData?.businessCalendar || []).find(item => item.date === day) || {};
+        const specialStatus = calendarDay.closed ? '特殊休息日：不接受新訂單' : calendarDay.businessType === 'SPECIAL_OPEN' ? '特殊營業日' : '一般週規則';
+        const note = settings.note ? `特殊狀態說明：${settings.note}` : '特殊狀態說明：無';
+        $('#selectedDateSchedule').textContent = `${getBusinessTestStatus(day)}\n${specialStatus}；${weekdayNames[weekdayCode]}${businessDays.includes(weekdayCode) ? '為每週營業日' : '為每週公休日'}。\n訂餐時間：${settings.openTime || '未設定'}–${settings.closeTime || '未設定'}。\n可取餐時間：${settings.pickupStartTime || '未設定'}–${settings.pickupEndTime || '未設定'}；每 ${settings.pickupIntervalMinutes || 30} 分鐘一格。\n${note}`;
         ['openTime','closeTime','pickupStartTime','pickupEndTime','pickupIntervalMinutes'].forEach(id => { $('#'+id).disabled = !canEdit; });
         $('#closedToggle').disabled = true; $('#specialNote').disabled = true;
         renderPickupSlotList(day, settings, readOnlyData && !readOnlyData.loading ? 'Settings' : '示意設定');
@@ -718,6 +755,17 @@
       });
       $('#settingDate').value = today; $('#settlementDate').value = today; $('#orderDate').value = '';
       $('#settingDate').addEventListener('change', renderSettings);
+      $('#businessDateOptions').addEventListener('click', event => {
+        const button = event.target.closest('[data-business-date]'); if (!button) return;
+        const day = button.dataset.businessDate;
+        $('#settingDate').value = day;
+        if (testClockOverride) {
+          const compactDate = day.replace(/-/g, '');
+          testClockOverride = { ...testClockOverride, date: day, digits: `${compactDate}${String(testClockOverride.hour).padStart(2,'0')}${String(testClockOverride.minute).padStart(2,'0')}` };
+          $('#testClockInput').value = testClockOverride.digits;
+        }
+        renderSettings();
+      });
       $$('[data-business-day]').forEach(input => input.addEventListener('change', updateBusinessDaysSummary));
       ['pickupStartTime','pickupEndTime','pickupIntervalMinutes'].forEach(id => $('#'+id).addEventListener('input', () => {
         const day = $('#settingDate').value || today, settings = getDaySettings(day);
@@ -728,6 +776,7 @@
       $('#applyTestClock').addEventListener('click', () => {
         try {
           testClockOverride = parseTestClock($('#testClockInput').value);
+          testClockOverride.rangeStartDate = testClockOverride.date;
           $('#settingDate').value = testClockOverride.date;
           renderSettings();
           showToast('已套用測試時間；只影響本頁營業狀態預覽');
