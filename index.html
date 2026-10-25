@@ -424,8 +424,11 @@ function submitOrderToGas(data, successCallback, errorCallback) {
     let cart = {};
 
     let storeSettings = {
-      openTime: "16:00",
-      closeTime: "21:30",
+      openTime: "06:00",
+      closeTime: "17:30",
+      pickupStartTime: "16:00",
+      pickupEndTime: "17:30",
+      pickupIntervalMinutes: 30,
       disabledSlots: ["19:00-20:00", "21:00-21:15"]
     };
 
@@ -963,11 +966,33 @@ function loadProductsFromGas(successCallback, errorCallback) {
       selectElem.innerHTML =
         '<option value="">-- 請選擇預計取餐時間 --</option>';
 
+      const submitButton = document.getElementById('btnSubmitOrder');
+      const closedMessage = storeSettings.closedReason || '今日休息，不接受新訂單。';
+      if (storeSettings.acceptingOrders === false) {
+        selectElem.disabled = true;
+        const closedOption = document.createElement('option');
+        closedOption.value = '';
+        closedOption.textContent = closedMessage;
+        selectElem.replaceChildren(closedOption);
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.innerText = '目前不接受訂單';
+          submitButton.title = closedMessage;
+        }
+        return;
+      }
+      selectElem.disabled = false;
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.innerText = '確認送出';
+        submitButton.title = '';
+      }
+
       const openStr =
-        storeSettings.openTime || "16:00";
+        storeSettings.pickupStartTime || "16:00";
 
       const closeStr =
-        storeSettings.closeTime || "21:30";
+        storeSettings.pickupEndTime || "17:30";
 
       const disabledArr =
         storeSettings.disabledSlots || [];
@@ -984,7 +1009,7 @@ function loadProductsFromGas(successCallback, errorCallback) {
       const endMin =
         closeH * 60 + closeM;
 
-      const INTERVAL_MINUTES = 30;
+      const INTERVAL_MINUTES = Math.max(1, Number(storeSettings.pickupIntervalMinutes) || 30);
 
       while (currMin < endMin) {
 
@@ -1037,8 +1062,8 @@ function loadProductsFromGas(successCallback, errorCallback) {
                 deH * 60 + deM;
 
               return (
-                currMin >= dsMin &&
-                nextMin <= deMin
+                currMin < deMin &&
+                nextMin > dsMin
               );
 
             }
