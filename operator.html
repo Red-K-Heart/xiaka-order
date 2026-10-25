@@ -71,7 +71,7 @@
     .chip { flex: 0 0 auto; min-height: 40px; padding: 8px 13px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--surface); }
     .chip.active { border-color: var(--brand); color: var(--brand-fg); background: var(--brand); }
     .chip-count { display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; margin-left: 5px; border-radius: 50%; color: #fff; background: #168f8b; font-size: 12px; font-weight: 700; line-height: 1; vertical-align: middle; }
-    .order-list { display: grid; gap: 11px; }
+    .order-list { display: grid; grid-template-columns: 1fr; gap: 11px; }
     .order-card { padding: 15px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
     .order-title { align-items: flex-start; }
     .order-code { font-weight: 750; font-size: 16px; }
@@ -127,10 +127,11 @@
     .dialog-actions { display: flex; gap: 8px; margin-top: 14px; }
     .toast { position: fixed; z-index: 20; left: 50%; bottom: 18px; width: min(460px, calc(100% - 28px)); transform: translateX(-50%); padding: 12px 15px; border-radius: 12px; color: var(--brand-fg); background: var(--brand-deep); box-shadow: var(--shadow); }
     .toast[hidden] { display: none; }
-    @media (min-width: 760px) {
-      main { padding-top: 22px; }
-      .order-list { grid-template-columns: 1fr 1fr; align-items: start; }
-    }
+  @media (min-width: 760px) {
+    main { padding-top: 22px; }
+    .order-list { grid-template-columns: 1fr; align-items: start; }
+    #ordersPanel { width: min(calc(100vw - 48px), 1280px); margin-left: 50%; transform: translateX(-50%); }
+  }
   </style>
 </head>
 <body>
@@ -234,7 +235,7 @@
         <div class="field"><label for="editPickupTime">取餐時段</label><input class="input" id="editPickupTime" required></div>
         <div class="field"><label for="editName">客戶姓名</label><input class="input" id="editName" required></div>
         <div class="field"><label for="editPhone">客戶電話</label><input class="input" id="editPhone" inputmode="tel" required></div>
-        <div class="field"><label for="editItems">商品明細（每行一項）</label><textarea class="textarea" id="editItems" required></textarea></div>
+        <div class="field"><label for="editItems">商品明細（目前唯讀）</label><textarea class="textarea" id="editItems" disabled></textarea></div>
         <div class="field"><label for="editAmount">修改後訂單金額</label><input class="input" id="editAmount" type="number" min="0" step="1" required></div>
         <div class="field"><label for="editRemarks">備註</label><textarea class="textarea" id="editRemarks"></textarea></div>
         <div class="dialog-actions"><button class="btn" id="cancelEdit" type="button">返回</button><button class="btn primary" type="submit">確認修改</button></div>
@@ -350,6 +351,14 @@
           return message.result;
         });
       }
+      function requestOperatorWrite(action, order, changes) {
+        const state = makeAuthState();
+        return requestOperatorResponse('operatorWrite', { action, credential: operatorCredential, state, orderId: order.id, revision: order.revision || 0, changes: changes || {} }).then(message => {
+          if (message?.type !== 'XIAKA_OPERATOR_WRITE' || message.state !== state) throw new Error('GAS 寫入回覆格式錯誤');
+          if (!message.result?.success) throw new Error(message.result?.message || 'GAS 拒絕更新訂單');
+          return message.result;
+        });
+      }
       async function loadOperatorSnapshot() {
         readOnlyData = { loading: true };
         data.orders = []; data.settings = {}; data.settlements = {};
@@ -362,8 +371,8 @@
           data.settings = {};
           data.settlements = response.data.settlements || {};
           $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・唯讀已連線`;
-          $('#connectionStatus').textContent = '正式試算表唯讀連線・不會寫入資料';
-          $('#connectionNotice').textContent = '目前讀取正式試算表資料；訂單、庫存、營業設定與結算操作仍為唯讀。';
+          $('#connectionStatus').textContent = '正式試算表已連線';
+          $('#connectionNotice').textContent = '訂單狀態可由作業頁更新；完整資料修改限系統管理員與店長。商品、營業設定及結算仍為唯讀。';
           renderOrders(); renderSettings(); renderSettlement();
           showToast(`已讀取 ${data.orders.length} 筆訂單與 ${(response.data.products || []).length} 項商品`);
         } catch (error) {
@@ -434,26 +443,25 @@
         list.innerHTML = visible.map(order => `
           <article class="order-card" data-order="${escapeHtml(order.id)}">
             <div class="order-title"><span class="order-code">${escapeHtml(order.id)}</span><span class="badge ${escapeHtml(order.status)}">${statusLabel[order.status]}</span></div>
-            <div class="order-meta"><span>取餐 ${escapeHtml(order.pickupTime)}</span><span>・</span><span>${escapeHtml(order.name)}</span><span>・</span><span>末四碼 ${escapeHtml(order.phone.slice(-4))}</span></div>
+            <div class="order-meta"><span>下單時間：${escapeHtml(order.orderTime || '—')}</span><span>取餐日期：${escapeHtml(order.pickupDate || '—')}</span><span>取餐時段：${escapeHtml(order.pickupTime || '—')}</span></div>
+            <div class="order-meta"><span>姓名：${escapeHtml(order.name || '—')}</span><span>電話：${escapeHtml(order.phone || '—')}</span></div>
             ${order.items.map(item => `<div class="item-row"><span>${escapeHtml(item)}</span></div>`).join('')}
-            <div class="item-row total-row"><span>${escapeHtml(order.payment)}</span><span>金額 ${money(order.amount)}</span></div>
-            <details><summary>查看完整資料</summary><div class="detail-body"><div>下單時間：${escapeHtml(order.orderTime)}</div><div>取餐日期：${escapeHtml(order.pickupDate)}</div><div>電話：${escapeHtml(order.phone)}</div><div>備註：${escapeHtml(order.remarks || '無')}</div></div></details>
-            <div class="action-row">${readOnlyData ? '<span class="muted">試算表唯讀</span>' : `${order.status === 'pending' ? `<button class="btn primary" data-action="prepare" data-id="${escapeHtml(order.id)}">開始準備</button>` : ''}${order.status === 'preparing' ? `<button class="btn primary" data-action="complete" data-id="${escapeHtml(order.id)}">標示已完成</button>` : ''}${order.status !== 'cancelled' ? `<button class="btn" data-action="edit" data-id="${escapeHtml(order.id)}">修改訂單</button><button class="btn danger" data-action="cancel" data-id="${escapeHtml(order.id)}">${cancelArmed.has(order.id) ? '再按一次確認取消' : '取消訂單'}</button>` : ''}`}</div>
+            <div class="item-row total-row"><span>付款狀態：${escapeHtml(order.payment || '—')}</span><span>訂單金額：${money(order.amount)}</span></div>
+            <div class="detail-body"><div>訂單系統編號：${escapeHtml(order.systemId || '—')}</div><div>訂單備註：${escapeHtml(order.remarks || '無')}</div>${(order.extraDetails || []).map(detail => `<div>${escapeHtml(detail.label)}：${escapeHtml(detail.value || '—')}</div>`).join('')}</div>
+            <div class="action-row"><button class="btn" data-action="edit" data-id="${escapeHtml(order.id)}" ${order.status === 'cancelled' ? 'disabled' : ''}>修改訂單</button><button class="btn primary" data-action="complete" data-id="${escapeHtml(order.id)}" ${['completed','cancelled'].includes(order.status) ? 'disabled' : ''}>已完成</button><button class="btn danger" data-action="cancel" data-id="${escapeHtml(order.id)}" ${['completed','cancelled'].includes(order.status) ? 'disabled' : ''}>${cancelArmed.has(order.id) ? '再按一次確認已取消' : '已取消'}</button></div>
           </article>`).join('');
       }
-      function setOrderStatus(id, status) {
-        if (readOnlyData) return showToast('目前為唯讀連線，尚未開放訂單寫入');
+      async function setOrderStatus(id, status) {
         const order = data.orders.find(item => item.id === id); if (!order) return;
-        const before = { status: order.status };
-        order.status = status;
-        data.auditLog.unshift({ at: new Date().toISOString(), actor: role(), order: id, action: '更新狀態', before, after: { status } });
-        saveLocal(); renderOrders(); showToast(`示意訂單已更新為「${statusLabel[status]}」`);
+        if (status === 'cancelled' && !confirm('確認將此訂單狀態改為「已取消」？')) return;
+        try { await requestOperatorWrite('updateOrderStatus', order, { status }); showToast(`訂單已更新為「${statusLabel[status]}」`); await loadOperatorSnapshot(); }
+        catch (error) { showToast(error.message); }
       }
       function openEdit(id) {
-        if (readOnlyData) return showToast('目前為唯讀連線，尚未開放訂單修改');
+        if (!['系統管理員','店長'].includes(signedInOperator?.role)) return showToast('只有系統管理員或店長可以修改訂單');
         const order = data.orders.find(item => item.id === id); if (!order) return;
         $('#editOrderId').value = id; $('#editPickupDate').value = order.pickupDate; $('#editPickupTime').value = order.pickupTime;
-        $('#editName').value = order.name; $('#editPhone').value = order.phone; $('#editItems').value = order.items.join('\n');
+        $('#editName').value = order.name; $('#editPhone').value = order.phone; $('#editItems').value = order.items.join('\n'); $('#editItems').disabled = true;
         $('#editAmount').value = order.amount; $('#editRemarks').value = order.remarks || ''; $('#editDialog').showModal();
       }
       function getDaySettings(day) {
@@ -524,7 +532,6 @@
       $('#orderList').addEventListener('click', event => {
         const button = event.target.closest('[data-action]'); if (!button) return;
         const id = button.dataset.id, action = button.dataset.action;
-        if (action === 'prepare') setOrderStatus(id, 'preparing');
         if (action === 'complete') setOrderStatus(id, 'completed');
         if (action === 'edit') openEdit(id);
         if (action === 'cancel') {
@@ -533,13 +540,12 @@
         }
       });
       $('#closeEdit').addEventListener('click', () => $('#editDialog').close()); $('#cancelEdit').addEventListener('click', () => $('#editDialog').close());
-      $('#editForm').addEventListener('submit', event => {
-        event.preventDefault(); if (readOnlyData) return showToast('目前為唯讀連線，尚未開放訂單修改'); const order = data.orders.find(item => item.id === $('#editOrderId').value); if (!order) return;
+      $('#editForm').addEventListener('submit', async event => {
+        event.preventDefault(); const order = data.orders.find(item => item.id === $('#editOrderId').value); if (!order) return;
         if (!confirm('確認修改訂單資料與金額？')) return;
-        const before = JSON.parse(JSON.stringify(order));
-        Object.assign(order, { pickupDate: $('#editPickupDate').value, pickupTime: $('#editPickupTime').value.trim(), name: $('#editName').value.trim(), phone: $('#editPhone').value.trim(), items: $('#editItems').value.split('\n').map(s => s.trim()).filter(Boolean), amount: Number($('#editAmount').value) || 0, remarks: $('#editRemarks').value.trim() });
-        data.auditLog.unshift({ at: new Date().toISOString(), actor: role(), order: order.id, action: '修改訂單', before, after: JSON.parse(JSON.stringify(order)) });
-        saveLocal(); $('#editDialog').close(); renderOrders(); showToast('示意訂單已修改，異動紀錄已保留');
+        const changes = { pickupDate: $('#editPickupDate').value, pickupTime: $('#editPickupTime').value.trim(), name: $('#editName').value.trim(), phone: $('#editPhone').value.trim(), amount: Number($('#editAmount').value) || 0, remarks: $('#editRemarks').value.trim() };
+        try { await requestOperatorWrite('updateOrderDetails', order, changes); $('#editDialog').close(); showToast('訂單資料已更新'); await loadOperatorSnapshot(); }
+        catch (error) { showToast(error.message); }
       });
       $('#settingDate').value = today; $('#settlementDate').value = today; $('#orderDate').value = '';
       $('#settingDate').addEventListener('change', renderSettings);
