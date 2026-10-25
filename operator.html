@@ -251,7 +251,7 @@
       const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
       const STORAGE_KEY = 'xiaka-operator-demo-v1';
       const GOOGLE_CLIENT_ID = '384565693899-acvihnpcsrtpllgoi5kf9b9amks3tb1m.apps.googleusercontent.com';
-      const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzhJjRbPpSoad-yC4CWKBepUWLTs36aZytQgmBhhqVMHyzeUgGJByOK0jxlh8EpsAis/exec';
+      const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzvNQOzzm16906irmZtSA_3mfWO2GDWqZSjTVEMa3Ao5A638n-JdfrRYov197A_DM1TOA/exec';
       const roleSelect = $('#roleSelect');
       let pendingAuthState = '';
       let authTimeout;
@@ -314,7 +314,7 @@
       }
       async function requestOperatorResponse(flag, payload) {
         const state = payload.state;
-        const body = new URLSearchParams({ [flag]: '1', payload: JSON.stringify(payload) });
+        const body = new URLSearchParams({ [flag]: '1', operatorPayload: JSON.stringify(payload) });
         const post = fetch(GAS_WEB_APP_URL, {
           method: 'POST', mode: 'no-cors', credentials: 'omit',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
@@ -362,13 +362,13 @@
           data.settings = {};
           data.settlements = response.data.settlements || {};
           $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・唯讀已連線`;
-          $('#connectionStatus').textContent = '測試試算表唯讀連線・不會寫入資料';
-          $('#connectionNotice').textContent = '目前讀取測試試算表資料；訂單、庫存、營業設定與結算操作仍為唯讀。';
+          $('#connectionStatus').textContent = '正式試算表唯讀連線・不會寫入資料';
+          $('#connectionNotice').textContent = '目前讀取正式試算表資料；訂單、庫存、營業設定與結算操作仍為唯讀。';
           renderOrders(); renderSettings(); renderSettlement();
           showToast(`已讀取 ${data.orders.length} 筆訂單與 ${(response.data.products || []).length} 項商品`);
         } catch (error) {
           $('#authUserStatus').textContent = `登入成功，資料讀取失敗：${error.message}`;
-          showToast('作業資料讀取失敗，請檢查測試 GAS 部署與 Staff_Accounts');
+          showToast('作業資料讀取失敗，請檢查 GAS 部署與 Staff_Accounts');
         }
       }
       function showAuthError(message) {
