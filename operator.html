@@ -53,7 +53,7 @@
     @media (max-width: 420px) { .auth-line { align-items: flex-start; flex-direction: column; } .auth-user { max-width: 100%; } }
     .sync-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: #79c491; }
     .demo-ribbon { max-width: 720px; margin: 12px auto 0; padding: 9px 11px; border: 1px solid var(--header-line); border-radius: 10px; background: var(--header-fill); color: inherit; font-size: 12px; }
-    .tabbar { display: grid; grid-template-columns: repeat(3,1fr); gap: 4px; max-width: 720px; margin: 0 auto; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--line); }
+    .tabbar { display: grid; grid-template-columns: repeat(4,1fr); gap: 4px; max-width: 720px; margin: 0 auto; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--line); }
     .tab { min-height: 46px; border: 0; border-radius: 12px; color: var(--muted); background: transparent; font-weight: 650; }
     .tab[aria-selected="true"] { color: var(--brand-fg); background: var(--brand); }
     main { width: min(100% - 24px, 680px); margin: 0 auto; padding: 18px 0 32px; }
@@ -120,6 +120,14 @@
     .count-row { display: grid; grid-template-columns: minmax(0,1fr) auto 104px; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding: 10px 0; }
     .count-current { color: var(--muted); font-size: 12px; white-space: nowrap; }
     .count-input { width: 104px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; text-align: center; background: var(--surface); }
+    .inventory-scroll { width: 100%; overflow-x: auto; }
+    .inventory-grid { display: grid; align-items: center; gap: 8px; min-width: 510px; }
+    .opening-inventory-grid { grid-template-columns: minmax(125px,1.5fr) repeat(3, minmax(78px,1fr)); }
+    .settlement-inventory-grid { grid-template-columns: minmax(120px,1.4fr) repeat(4, minmax(76px,1fr)); min-width: 590px; }
+    .inventory-heading { padding: 8px 4px; color: var(--brand); font-size: 12px; font-weight: 750; text-align: center; }
+    .inventory-product { padding: 9px 4px; border-top: 1px solid var(--line); font-size: 13px; font-weight: 650; }
+    .inventory-value { width: 100%; min-width: 68px; min-height: 42px; padding: 6px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--surface-soft); text-align: center; }
+    .inventory-readonly { color: var(--muted); font-size: 13px; text-align: center; }
     .stock-name { font-weight: 650; }
     .stock-sub { margin-top: 2px; color: var(--muted); font-size: 12px; }
     .qty-input { width: 94px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; text-align: center; background: var(--surface); }
@@ -167,13 +175,36 @@
   </header>
 
   <nav class="tabbar" role="tablist" aria-label="現場作業功能">
-    <button class="tab" id="ordersTab" role="tab" aria-controls="ordersPanel" aria-selected="true" type="button">訂單</button>
-    <button class="tab" id="settingsTab" role="tab" aria-controls="settingsPanel" aria-selected="false" type="button">設定</button>
+    <button class="tab" id="openingTab" role="tab" aria-controls="openingPanel" aria-selected="true" type="button">開店</button>
+    <button class="tab" id="ordersTab" role="tab" aria-controls="ordersPanel" aria-selected="false" type="button">訂單</button>
     <button class="tab" id="settlementTab" role="tab" aria-controls="settlementPanel" aria-selected="false" type="button">結算</button>
+    <button class="tab" id="settingsTab" role="tab" aria-controls="settingsPanel" aria-selected="false" type="button">設定</button>
   </nav>
 
   <main>
-    <section class="panel" id="ordersPanel" role="tabpanel" aria-labelledby="ordersTab">
+    <section class="panel" id="openingPanel" role="tabpanel" aria-labelledby="openingTab">
+      <div class="section-title"><h2>開店作業</h2><span id="openingBadge" class="badge pending">尚未建立</span></div>
+      <div class="section">
+        <div class="field"><label for="openingDate">開店日期</label><input class="input" id="openingDate" type="date"></div>
+        <div class="field"><label for="openingFloat">預備金</label><input class="input money" id="openingFloat" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>
+      </div>
+      <div class="section">
+        <div class="section-title"><h3>進貨盤點</h3><span class="muted">保留數量為庫存；已訂數量依未取消線上訂單統計</span></div>
+        <p class="muted">進貨數量是今日新進的量；保留數量是目前庫存；已訂數量是目前線上訂餐的售出量。</p>
+        <div id="openingInventoryList"></div>
+      </div>
+      <div class="section">
+        <div class="field"><label for="openingWeather">天氣</label><select class="select" id="openingWeather"><option value="">請選擇</option><option>晴天</option><option>陰天</option><option>雨天</option><option>其他</option></select></div>
+        <div class="field"><label for="openingNote">備註</label><textarea class="textarea" id="openingNote" placeholder="填寫開店或進貨事項"></textarea></div>
+        <div class="action-row">
+          <button class="btn" id="saveOpeningDraft" type="button">儲存草稿</button>
+          <button class="btn primary" id="completeOpening" type="button">完成開店</button>
+        </div>
+        <div class="status-note" id="openingMeta">開店資料會記錄操作人與儲存時間。</div>
+      </div>
+    </section>
+
+    <section class="panel" id="ordersPanel" role="tabpanel" aria-labelledby="ordersTab" hidden>
       <div class="section-title"><h2>訂單管理</h2><span class="muted" id="orderCount"></span></div>
       <div class="toolbar">
         <div class="search-wrap"><label class="sr-only" for="orderSearch">搜尋訂單</label><input class="input" id="orderSearch" type="search" placeholder="訂單編號、姓名或電話" autocomplete="off"></div>
@@ -209,6 +240,7 @@
           <div class="field"><label for="pickupEndTime">可取餐結束時間（24 小時制）</label><select class="select" id="pickupEndTime" aria-label="可取餐結束時間"></select></div>
         </div>
         <div class="field"><label for="pickupIntervalMinutes">取餐時段間隔（分鐘）</label><input class="input" id="pickupIntervalMinutes" type="number" min="1" max="720" step="1" inputmode="numeric" value="30"></div>
+        <div class="status-note" id="scheduleEditingNotice" aria-live="polite" hidden></div>
         <div class="field"><span class="field-label">每週營業日</span><div class="weekday-grid" id="businessDaysOptions" role="group" aria-label="每週營業日">
           <label class="weekday-option"><input type="checkbox" value="MON" data-business-day>週一</label><label class="weekday-option"><input type="checkbox" value="TUE" data-business-day>週二</label><label class="weekday-option"><input type="checkbox" value="WED" data-business-day>週三</label><label class="weekday-option"><input type="checkbox" value="THU" data-business-day>週四</label><label class="weekday-option"><input type="checkbox" value="FRI" data-business-day>週五</label><label class="weekday-option"><input type="checkbox" value="SAT" data-business-day>週六</label><label class="weekday-option"><input type="checkbox" value="SUN" data-business-day>週日</label>
         </div></div>
@@ -235,22 +267,25 @@
         <div class="field"><label for="stockReason">庫存異動原因</label><input class="input" id="stockReason" placeholder="例如：補貨、盤點調整"></div>
         <p class="muted">數量歸零會標示售完；手動下架狀態會另外保存。</p>
       </div>
-      <button class="btn primary full" id="saveSettings" type="button">儲存營業設定</button>
+      <div class="action-row">
+        <button class="btn" id="editSettings" type="button">修改設定</button>
+        <button class="btn" id="cancelSettingsEdit" type="button" hidden>取消修改</button>
+        <button class="btn primary" id="saveSettings" type="button" hidden>儲存設定</button>
+      </div>
     </section>
 
     <section class="panel" id="settlementPanel" role="tabpanel" aria-labelledby="settlementTab" hidden>
       <div class="section-title"><h2>每日結算</h2><span id="settlementBadge" class="badge pending">尚未建立</span></div>
       <div class="section">
-        <div class="field"><label for="settlementDate">結算日期</label><input class="input" id="settlementDate" type="date"></div>
+        <div class="field"><label for="settlementDate">日期</label><input class="input" id="settlementDate" type="date"></div>
         <div class="amount-row">
           <div class="field"><label for="cashSales">現金收款金額</label><input class="input money" id="cashSales" inputmode="decimal" placeholder="0"></div>
-          <div class="field"><label for="floatAmount">預備金／找零金</label><input class="input money" id="floatAmount" inputmode="decimal" placeholder="0"></div>
-          <div class="field"><label for="countedCash">實際盤點現金</label><input class="input money" id="countedCash" inputmode="decimal" placeholder="0"></div>
           <div class="field"><label for="expenseAmount">支出金額</label><input class="input money" id="expenseAmount" inputmode="decimal" placeholder="0"></div>
           <div class="field"><label for="wasteAmount">報廢成本</label><input class="input money" id="wasteAmount" inputmode="decimal" placeholder="0"></div>
         </div>
         <div class="section">
-          <div class="section-title"><h3>商品數量盤點</h3><span class="muted">填寫實際清點數量</span></div>
+          <div class="section-title"><h3>商品數量盤點</h3><span class="muted">輸入今日銷售、報廢、庫存與預計採購量</span></div>
+          <p class="muted">賣出數量是今日售出；報廢數量是報廢品；保留數量是庫存；下單備貨是預計向工廠叫料或採購的量。</p>
           <div id="settlementInventoryList"></div>
         </div>
         <div class="field"><label for="settlementNote">備註／差額原因</label><textarea class="textarea" id="settlementNote" placeholder="填寫交班或核對事項"></textarea></div>
@@ -315,13 +350,15 @@
         ],
         settings: { [today]: { closed: false, openTime: '06:00', closeTime: '17:30', pickupStartTime: '16:00', pickupEndTime: '17:30', pickupIntervalMinutes: 30, disabledSlots: ['19:00-20:00','21:00-21:15'], note: '', slots: [], stock: [{ id: 'P001', name: '煙燻豆干', quantity: 12, manualHidden: false }, { id: 'P002', name: '甜不辣', quantity: 0, manualHidden: false }, { id: 'P003', name: '米血', quantity: 8, manualHidden: true }] } },
         businessSettings: { openTime: '06:00', closeTime: '17:30', pickupStartTime: '16:00', pickupEndTime: '17:30', pickupIntervalMinutes: 30, businessDays: ['MON','TUE','WED','THU','FRI','SAT'] },
-        inventoryLog: [], auditLog: [], settlements: {}
+        inventoryLog: [], auditLog: [], openings: {}, settlements: {}
       };
       let data;
       try { data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || sample; }
       catch (_) { data = sample; }
       if (!data.businessSettings) data.businessSettings = JSON.parse(JSON.stringify(sample.businessSettings));
+      if (!data.openings) data.openings = {};
       let activeFilter = 'unfinished';
+      let settingsEditMode = false;
       let toastTimer;
       let cancelArmed = new Set();
 
@@ -433,7 +470,7 @@
       async function loadOperatorSnapshot() {
         readOnlyData = { loading: true };
         data.orders = []; data.settings = {}; data.settlements = {};
-        renderOrders(); renderSettings(); renderSettlement();
+        renderOrders(); renderOpening(); renderSettings(); renderSettlement();
         $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・讀取中`;
         try {
           const response = await requestOperatorSnapshot();
@@ -443,8 +480,8 @@
           data.settlements = response.data.settlements || {};
           $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・已連線`;
           $('#connectionStatus').textContent = '正式試算表已連線・訂單每30秒更新';
-          $('#connectionNotice').textContent = '訂單狀態可由作業頁更新；系統管理員與店長可修改訂餐時間、取餐時段及每週營業日。商品庫存與結算仍為唯讀。';
-          renderOrders(); renderSettings(); renderSettlement();
+        $('#connectionNotice').textContent = '訂單狀態可由作業頁更新；系統管理員與店長可修改營業規則。開店紀錄、商品庫存與結算尚未連接 GAS 寫入。';
+          renderOrders(); renderOpening(); renderSettings(); renderSettlement();
           startOrdersAutoRefresh();
           showToast(`已讀取 ${data.orders.length} 筆訂單與 ${(response.data.products || []).length} 項商品`);
         } catch (error) {
@@ -597,12 +634,59 @@
       }
       function renderPickupSlotList(day, settings, sourceLabel) {
         $('#pickupIntervalInfo').textContent = `依 ${sourceLabel} 間隔產生（${settings.pickupIntervalMinutes || 30} 分鐘）`;
-        $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${readOnlyData || !canManageSchedule() ? 'disabled' : ''}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('') || `<div class="empty">${settings.closed ? '本日休息，未開放取餐時段。' : '請確認可取餐起訖時間與時段間隔。'}</div>`;
+        $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${readOnlyData || !canManageSchedule() || !settingsEditMode || settings.closed ? 'disabled' : ''}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('') || `<div class="empty">${settings.closed ? '本日休息，未開放取餐時段。' : '請確認可取餐起訖時間與時段間隔。'}</div>`;
       }
       function updateBusinessDaysSummary() {
         const names = { MON:'週一', TUE:'週二', WED:'週三', THU:'週四', FRI:'週五', SAT:'週六', SUN:'週日' };
         const selected = $$('[data-business-day]:checked').map(input => input.value);
         $('#businessDaysSummary').textContent = `目前營業日：${selected.length ? selected.map(code => names[code]).join('、') : '無（每週皆休息）'}。`;
+      }
+      function updateScheduleTimeControls(canEdit, day, parts) {
+        const weekdayCode = ['SUN','MON','TUE','WED','THU','FRI','SAT'][parts.value.getUTCDay()];
+        const selectedBusinessDays = $$('[data-business-day]:checked').map(input => input.value);
+        const calendarDay = (readOnlyData?.businessCalendar || []).find(item => item.date === day) || {};
+        const specialOpen = calendarDay.businessType === 'SPECIAL_OPEN';
+        const specialClosed = !!calendarDay.closed || calendarDay.businessType === 'CLOSED';
+        const isOperatingDate = !specialClosed && (specialOpen || selectedBusinessDays.includes(weekdayCode));
+        const editable = canEdit && settingsEditMode && isOperatingDate;
+        ['openTime','closeTime','pickupStartTime','pickupEndTime','pickupIntervalMinutes'].forEach(id => { $('#'+id).disabled = !editable; });
+        const notice = $('#scheduleEditingNotice');
+        notice.hidden = !canEdit || isOperatingDate;
+        notice.textContent = specialClosed
+          ? '此日期已在 Business_Calendar 設為休息，不接受新訂單，因此不開放設定訂餐及取餐時間。'
+          : !isOperatingDate
+            ? `${weekdayCode === 'SUN' ? '週日' : parts.weekday}為每週公休日，不開放設定訂餐及取餐時間。若要設定每週時段，請選擇營業日；若要開放此日，請勾選此星期為營業日或在 Business_Calendar 設定特殊營業日。`
+            : '';
+        return { isOperatingDate, specialOpen, specialClosed, weekdayCode };
+      }
+      function refreshBusinessDayEditor() {
+        updateBusinessDaysSummary();
+        const day = $('#settingDate').value || today;
+        const parts = dateParts(day);
+        const liveReady = !!readOnlyData && !readOnlyData.loading;
+        const canEdit = canManageSchedule() && (!readOnlyData || (liveReady && !!signedInOperator));
+        updateScheduleTimeControls(canEdit, day, parts);
+        const weekdayCode = ['SUN','MON','TUE','WED','THU','FRI','SAT'][parts.value.getUTCDay()];
+        const weekdayNames = { MON:'週一', TUE:'週二', WED:'週三', THU:'週四', FRI:'週五', SAT:'週六', SUN:'週日' };
+        const lineStart = `${weekdayNames[weekdayCode]}為每週`;
+        const content = $('#selectedDateSchedule').textContent;
+        $('#selectedDateSchedule').textContent = content.replace(new RegExp(`${lineStart}(?:營業日|公休日)`), `${lineStart}${$$('[data-business-day]:checked').some(input => input.value === weekdayCode) ? '營業日' : '公休日'}`);
+      }
+      function getOrderedQuantity(day, product) {
+        const name = String(product.name || '').trim();
+        if (!name) return 0;
+        return data.orders.filter(order => order.pickupDate === day && order.status !== 'cancelled').reduce((total, order) => {
+          return total + (order.items || []).reduce((subtotal, item) => {
+            if (item && typeof item === 'object') {
+              const itemName = String(item.name || item.Item_Name || '').trim();
+              return itemName === name ? subtotal + (Number(item.quantity || item.Quantity) || 0) : subtotal;
+            }
+            const line = String(item || '').trim();
+            if (!line.startsWith(name)) return subtotal;
+            const match = line.match(/×\s*(\d+)/);
+            return subtotal + (match ? Number(match[1]) : 0);
+          }, 0);
+        }, 0);
       }
       function dateParts(day) {
         const [year, month, date] = String(day).split('-').map(Number);
@@ -697,20 +781,79 @@
           openTime: config.openTime || '06:00', closeTime: config.closeTime || '17:30',
           pickupStartTime: config.pickupStartTime || '16:00', pickupEndTime: config.pickupEndTime || '17:30'
         });
-        $$('[data-business-day]').forEach(input => { input.checked = businessDays.includes(input.value); input.disabled = !canEdit; });
+        $$('[data-business-day]').forEach(input => { input.checked = businessDays.includes(input.value); input.disabled = !canEdit || !settingsEditMode; });
         updateBusinessDaysSummary();
         const weekdayNames = { MON:'週一', TUE:'週二', WED:'週三', THU:'週四', FRI:'週五', SAT:'週六', SUN:'週日' };
         const weekdayCode = ['SUN','MON','TUE','WED','THU','FRI','SAT'][parts.value.getUTCDay()];
         const calendarDay = (readOnlyData?.businessCalendar || []).find(item => item.date === day) || {};
+        updateScheduleTimeControls(canEdit, day, parts);
         const specialStatus = calendarDay.closed ? '特殊休息日：不接受新訂單' : calendarDay.businessType === 'SPECIAL_OPEN' ? '特殊營業日' : '一般週規則';
         const note = settings.note ? `特殊狀態說明：${settings.note}` : '特殊狀態說明：無';
         $('#selectedDateSchedule').textContent = `${getBusinessTestStatus(day)}\n${specialStatus}；${weekdayNames[weekdayCode]}${businessDays.includes(weekdayCode) ? '為每週營業日' : '為每週公休日'}。\n訂餐時間：${settings.openTime || '未設定'}–${settings.closeTime || '未設定'}。\n可取餐時間：${settings.pickupStartTime || '未設定'}–${settings.pickupEndTime || '未設定'}；每 ${settings.pickupIntervalMinutes || 30} 分鐘一格。\n${note}`;
-        ['openTime','closeTime','pickupStartTime','pickupEndTime','pickupIntervalMinutes'].forEach(id => { $('#'+id).disabled = !canEdit; });
         $('#closedToggle').disabled = true; $('#specialNote').disabled = true;
         renderPickupSlotList(day, settings, readOnlyData && !readOnlyData.loading ? 'Settings' : '示意設定');
-        $('#stockList').innerHTML = settings.stock.map((item,index) => `<div class="stock-row"><div><div class="stock-name">${escapeHtml(item.name)}</div><div class="stock-sub">${item.quantity === 0 ? '庫存售完' : '可售數量'}</div></div><input class="qty-input" type="number" min="0" step="1" value="${Number(item.quantity) || 0}" data-qty="${index}" aria-label="${escapeHtml(item.name)}可售數量" ${readOnlyData ? 'disabled' : ''}><label class="switch-label"><input type="checkbox" data-hidden="${index}" ${item.manualHidden ? 'checked' : ''} ${readOnlyData ? 'disabled' : ''}>手動下架</label></div>`).join('');
-        $('#stockReason').disabled = !!readOnlyData || !canManageSchedule();
-        $('#saveSettings').disabled = !canEdit;
+        $('#stockList').innerHTML = settings.stock.map((item,index) => `<div class="stock-row"><div><div class="stock-name">${escapeHtml(item.name)}</div><div class="stock-sub">${item.quantity === 0 ? '庫存售完' : '可售數量'}</div></div><input class="qty-input" type="number" min="0" step="1" value="${Number(item.quantity) || 0}" data-qty="${index}" aria-label="${escapeHtml(item.name)}可售數量" ${readOnlyData || !canEdit || !settingsEditMode ? 'disabled' : ''}><label class="switch-label"><input type="checkbox" data-hidden="${index}" ${item.manualHidden ? 'checked' : ''} ${readOnlyData || !canEdit || !settingsEditMode ? 'disabled' : ''}>手動下架</label></div>`).join('');
+        $('#stockReason').disabled = !!readOnlyData || !canEdit || !settingsEditMode;
+        $('#editSettings').hidden = settingsEditMode;
+        $('#editSettings').disabled = !canEdit;
+        $('#cancelSettingsEdit').hidden = !settingsEditMode;
+        $('#cancelSettingsEdit').disabled = !canEdit;
+        $('#saveSettings').hidden = !settingsEditMode;
+        $('#saveSettings').disabled = !canEdit || !settingsEditMode;
+      }
+      function renderOpening() {
+        const day = $('#openingDate').value || today;
+        const record = data.openings[day];
+        const locked = !!readOnlyData || !canClose() || record?.status === 'completed';
+        $('#openingBadge').textContent = record ? ({ draft:'草稿', completed:'已完成開店' }[record.status] || '草稿') : '尚未建立';
+        $('#openingBadge').className = `badge ${record?.status === 'completed' ? 'completed' : 'pending'}`;
+        $('#openingFloat').value = record?.floatAmount ?? '';
+        $('#openingWeather').value = record?.weather ?? '';
+        $('#openingNote').value = record?.note ?? '';
+        const products = getDaySettings(day).stock;
+        const inventory = record?.inventory || {};
+        $('#openingInventoryList').innerHTML = products.length
+          ? `<div class="inventory-scroll"><div class="inventory-grid opening-inventory-grid"><div class="inventory-heading">品名</div><div class="inventory-heading">進貨數量</div><div class="inventory-heading">保留數量</div><div class="inventory-heading">已訂數量</div>${products.map(item => {
+            const row = inventory[item.id] || { incoming: record?.incomingInventory?.[item.id] };
+            const ordered = getOrderedQuantity(day, item);
+            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(item.name)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-opening-incoming value="${row.incoming ?? ''}" aria-label="${escapeHtml(item.name)}進貨數量" ${locked ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? (Number(item.quantity) || 0)}" data-opening-reserved aria-label="${escapeHtml(item.name)}保留數量" ${locked ? 'disabled' : ''}></div><div class="inventory-readonly" data-opening-ordered>${ordered}</div>`;
+          }).join('')}</div></div>`
+          : '<div class="empty">目前沒有商品資料</div>';
+        ['openingFloat','openingWeather','openingNote'].forEach(id => { $('#'+id).disabled = locked; });
+        $('#saveOpeningDraft').disabled = locked;
+        $('#completeOpening').disabled = locked;
+        $('#openingMeta').textContent = record
+          ? `最後儲存：${record.updatedAt ? new Date(record.updatedAt).toLocaleString('zh-TW') : '—'} ・操作人：${record.actor || '—'}`
+          : readOnlyData ? '連線模式尚未提供開店資料寫入功能。' : '開店資料只儲存在此瀏覽器；完成後不可修改。';
+      }
+      function saveOpening(status) {
+        if (readOnlyData) return showToast('目前連線模式尚未開放開店資料寫入');
+        if (!canClose()) return showToast('只有系統管理員或店長可以完成開店作業');
+        const day = $('#openingDate').value;
+        const old = data.openings[day] || {};
+        const inventory = {};
+        const openingGrid = $('.opening-inventory-grid');
+        if (openingGrid) {
+          const cells = [...openingGrid.children];
+          openingGrid.querySelectorAll('.inventory-product').forEach(productCell => {
+            const index = cells.indexOf(productCell);
+            const incoming = cells[index + 1]?.querySelector('[data-opening-incoming]');
+            const reserved = cells[index + 2]?.querySelector('[data-opening-reserved]');
+            const ordered = cells[index + 3]?.querySelector('[data-opening-ordered]');
+            inventory[productCell.dataset.productId] = {
+              incoming: Math.max(0, Number(incoming?.value) || 0),
+              reserved: Math.max(0, Number(reserved?.value) || 0),
+              ordered: Math.max(0, Number(ordered?.textContent) || 0)
+            };
+          });
+        }
+        data.openings[day] = {
+          ...old, date: day, status, floatAmount: Number($('#openingFloat').value) || 0,
+          inventory, weather: $('#openingWeather').value, note: $('#openingNote').value.trim(),
+          actor: role(), updatedAt: new Date().toISOString()
+        };
+        saveLocal(); renderOpening();
+        showToast(status === 'completed' ? '開店作業已完成' : '開店草稿已儲存');
       }
       function renderSettlement() {
         const day = $('#settlementDate').value || today;
@@ -723,31 +866,57 @@
         $('#settlementMeta').textContent = record ? `最後儲存：${record.updatedAt ? new Date(record.updatedAt).toLocaleString('zh-TW') : '—'} ・操作人：${record.actor || '—'}` : (readOnlyData ? '此日期尚無結算資料。' : '建立人員與時間會在示意資料中記錄。');
         const settings = getDaySettings(day);
         const inventoryCounts = record?.inventoryCounts || {};
+        const inventory = record?.inventory || {};
         $('#settlementInventoryList').innerHTML = settings.stock.length
-          ? settings.stock.map(item => `<div class="count-row"><span class="stock-name">${escapeHtml(item.name)}</span><span class="count-current">登記 ${Number(item.quantity) || 0}</span><input class="count-input" type="number" min="0" step="1" inputmode="numeric" placeholder="盤點數量" data-counted-stock="${escapeHtml(item.id)}" value="${inventoryCounts[item.id] ?? ''}" aria-label="${escapeHtml(item.name)}實際盤點數量" ${readOnlyData || record?.status === 'closed' ? 'disabled' : ''}></div>`).join('')
+          ? `<div class="inventory-scroll"><div class="inventory-grid settlement-inventory-grid"><div class="inventory-heading">品名</div><div class="inventory-heading">賣出數量</div><div class="inventory-heading">報廢數量</div><div class="inventory-heading">保留數量</div><div class="inventory-heading">下單備貨</div>${settings.stock.map(item => {
+            const row = inventory[item.id] || {};
+            const disabled = readOnlyData || record?.status === 'closed' ? 'disabled' : '';
+            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(item.name)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-sold value="${row.sold ?? ''}" aria-label="${escapeHtml(item.name)}賣出數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-waste value="${row.waste ?? ''}" aria-label="${escapeHtml(item.name)}報廢數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? inventoryCounts[item.id] ?? (Number(item.quantity) || 0)}" data-settlement-reserved aria-label="${escapeHtml(item.name)}保留數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-order value="${row.orderPrep ?? ''}" aria-label="${escapeHtml(item.name)}下單備貨" ${disabled}></div>`;
+          }).join('')}</div></div>`
           : '<div class="empty">此日期沒有商品資料</div>';
         if (record) {
-          $('#cashSales').value = record.cashSales ?? ''; $('#floatAmount').value = record.floatAmount ?? '';
-          $('#countedCash').value = record.countedCash ?? ''; $('#expenseAmount').value = record.expenseAmount ?? '';
+          $('#cashSales').value = record.cashSales ?? ''; $('#expenseAmount').value = record.expenseAmount ?? '';
           $('#wasteAmount').value = record.wasteAmount ?? ''; $('#settlementNote').value = record.note ?? '';
         } else {
-          ['cashSales','floatAmount','countedCash','expenseAmount','wasteAmount','settlementNote'].forEach(id => { $('#'+id).value = ''; });
+          ['cashSales','expenseAmount','wasteAmount','settlementNote'].forEach(id => { $('#'+id).value = ''; });
         }
-        ['cashSales','floatAmount','countedCash','expenseAmount','wasteAmount','settlementNote'].forEach(id => { $('#'+id).disabled = !!readOnlyData; });
+        ['cashSales','expenseAmount','wasteAmount','settlementNote'].forEach(id => { $('#'+id).disabled = !!readOnlyData || record?.status === 'closed'; });
       }
       function saveSettlement(status) {
         if (readOnlyData) return showToast('目前為唯讀連線，尚未開放結算寫入');
         const day = $('#settlementDate').value;
         const old = data.settlements[day] || {};
         const inventoryCounts = {};
-        $$('[data-counted-stock]').forEach(input => { if (input.value !== '') inventoryCounts[input.dataset.countedStock] = Math.max(0, Number(input.value) || 0); });
-        data.settlements[day] = { ...old, date: day, status, cashSales: Number($('#cashSales').value) || 0, floatAmount: Number($('#floatAmount').value) || 0, countedCash: Number($('#countedCash').value) || 0, expenseAmount: Number($('#expenseAmount').value) || 0, wasteAmount: Number($('#wasteAmount').value) || 0, inventoryCounts, note: $('#settlementNote').value.trim(), actor: role(), updatedAt: new Date().toISOString() };
+        const inventory = {};
+        const inventoryGrid = $('.settlement-inventory-grid');
+        if (inventoryGrid) {
+          const cells = [...inventoryGrid.children];
+          inventoryGrid.querySelectorAll('.inventory-product').forEach(productCell => {
+            const index = cells.indexOf(productCell);
+            const sold = cells[index + 1]?.querySelector('[data-settlement-sold]');
+            const waste = cells[index + 2]?.querySelector('[data-settlement-waste]');
+            const reserved = cells[index + 3]?.querySelector('[data-settlement-reserved]');
+            const orderPrep = cells[index + 4]?.querySelector('[data-settlement-order]');
+            const productId = productCell.dataset.productId;
+            const reservedValue = Math.max(0, Number(reserved?.value) || 0);
+            inventoryCounts[productId] = reservedValue;
+            inventory[productId] = {
+              sold: Math.max(0, Number(sold?.value) || 0),
+              waste: Math.max(0, Number(waste?.value) || 0),
+              reserved: reservedValue,
+              orderPrep: Math.max(0, Number(orderPrep?.value) || 0)
+            };
+          });
+        }
+        data.settlements[day] = { ...old, date: day, status, cashSales: Number($('#cashSales').value) || 0, expenseAmount: Number($('#expenseAmount').value) || 0, wasteAmount: Number($('#wasteAmount').value) || 0, inventoryCounts, inventory, note: $('#settlementNote').value.trim(), actor: role(), updatedAt: new Date().toISOString() };
         saveLocal(); renderSettlement(); showToast(status === 'closed' ? '示意結算已完成' : '示意結算草稿已儲存');
       }
       $$('.tab').forEach(tab => tab.addEventListener('click', () => {
         $$('.tab').forEach(item => item.setAttribute('aria-selected', String(item === tab)));
         $$('.panel').forEach(panel => { panel.hidden = panel.id !== tab.getAttribute('aria-controls'); });
         if (tab.getAttribute('aria-controls') === 'ordersPanel') refreshOrdersFromSheet();
+        if (tab.getAttribute('aria-controls') === 'openingPanel') renderOpening();
+        if (tab.getAttribute('aria-controls') === 'settlementPanel') renderSettlement();
       }));
       document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshOrdersFromSheet(); });
       $$('.chip').forEach(button => button.addEventListener('click', () => {
@@ -772,7 +941,8 @@
         try { await requestOperatorWrite('updateOrderDetails', order, changes); $('#editDialog').close(); showToast('訂單資料已更新'); await loadOperatorSnapshot(); }
         catch (error) { showToast(error.message); }
       });
-      $('#settingDate').value = today; $('#settlementDate').value = today; $('#orderDate').value = '';
+      $('#openingDate').value = today; $('#settingDate').value = today; $('#settlementDate').value = today; $('#orderDate').value = '';
+      $('#openingDate').addEventListener('change', renderOpening);
       $('#settingDate').addEventListener('change', renderSettings);
       $('#businessDateOptions').addEventListener('click', event => {
         const button = event.target.closest('[data-business-date]'); if (!button) return;
@@ -785,7 +955,7 @@
         }
         renderSettings();
       });
-      $$('[data-business-day]').forEach(input => input.addEventListener('change', updateBusinessDaysSummary));
+      $$('[data-business-day]').forEach(input => input.addEventListener('change', refreshBusinessDayEditor));
       const updatePickupPreview = () => {
         const interval = Number($('#pickupIntervalMinutes').value) || 30;
         const selectedValues = Object.fromEntries(['openTime','closeTime','pickupStartTime','pickupEndTime'].map(id => [id, $('#'+id).value]));
@@ -818,7 +988,14 @@
         else settings.disabledSlots = settings.disabledSlots.filter(range => String(range).replace(/\s/g,'') !== disabledRange.replace(/\s/g,''));
         renderSettings(); saveLocal();
       });
+      $('#editSettings').addEventListener('click', () => {
+        if (!canManageSchedule()) return showToast('只有系統管理員或店長可以修改營業設定');
+        if (readOnlyData && (!signedInOperator || readOnlyData.loading)) return showToast('請先完成登入及設定資料載入');
+        settingsEditMode = true; renderSettings();
+      });
+      $('#cancelSettingsEdit').addEventListener('click', () => { settingsEditMode = false; renderSettings(); showToast('已取消設定修改'); });
       $('#saveSettings').addEventListener('click', async () => {
+        if (!settingsEditMode) return showToast('請先選擇「修改設定」');
         if (readOnlyData?.loading) return showToast('設定資料載入中，請稍後再儲存');
         if (!canManageSchedule()) return showToast('只有系統管理員或店長可以修改營業設定');
         const openTime = $('#openTime').value.trim(), closeTime = $('#closeTime').value.trim();
@@ -841,6 +1018,7 @@
           $('#saveSettings').disabled = true;
           try {
             await requestBusinessSettingsWrite(changes);
+            settingsEditMode = false;
             await loadOperatorSnapshot();
             showToast('營業規則已更新並記錄異動');
           } catch (error) { showToast(error.message); renderSettings(); }
@@ -857,7 +1035,11 @@
         $$('[data-hidden]').forEach(input => { settings.stock[Number(input.dataset.hidden)].manualHidden = input.checked; });
         const reason = $('#stockReason').value.trim();
         settings.stock.forEach((item,index) => { if (item.quantity !== oldStock[index].quantity) data.inventoryLog.unshift({ at: new Date().toISOString(), actor: role(), productId: item.id, name: item.name, before: oldStock[index].quantity, after: item.quantity, reason: reason || '未填寫（示意）' }); });
-        saveLocal(); renderSettings(); showToast('示意營業設定已儲存在此瀏覽器');
+        saveLocal(); settingsEditMode = false; renderSettings(); showToast('示意營業設定已儲存在此瀏覽器');
+      });
+      $('#saveOpeningDraft').addEventListener('click', () => saveOpening('draft'));
+      $('#completeOpening').addEventListener('click', () => {
+        if (confirm(`確認完成 ${$('#openingDate').value || today} 的開店作業？完成後本頁不可再修改這筆資料。`)) saveOpening('completed');
       });
       $('#settlementDate').addEventListener('change', renderSettlement);
       $('#authSignOut').addEventListener('click', () => {
@@ -868,7 +1050,7 @@
         $('#authUserStatus').textContent = '已登出 Google'; $('#googleSignIn').hidden = false; $('#authSignOut').hidden = true;
         $('#connectionStatus').textContent = '示意模式・資料只存在這個瀏覽器';
         $('#connectionNotice').textContent = '尚未連接 Google 登入或試算表。此頁顯示的是本機示意資料。';
-        renderSettings(); renderSettlement();
+        settingsEditMode = false; renderOpening(); renderSettings(); renderSettlement();
       });
       $('#saveDraft').addEventListener('click', () => saveSettlement('draft'));
       $('#closeSettlement').addEventListener('click', () => { if (canClose() && confirm('確認完成這一天的結算？')) saveSettlement('closed'); });
@@ -876,8 +1058,8 @@
         if (readOnlyData || !canClose() || !confirm('確認重開已完成的結算？')) return;
         const record = data.settlements[$('#settlementDate').value]; if (record) { record.status = 'reopened'; record.actor = role(); record.updatedAt = new Date().toISOString(); saveLocal(); renderSettlement(); showToast('示意結算已重開'); }
       });
-      roleSelect.addEventListener('change', () => { renderSettings(); renderSettlement(); showToast(`展示角色已切換為「${role()}」`); });
-      renderOrders(); renderSettings(); renderSettlement();
+      roleSelect.addEventListener('change', () => { renderOpening(); renderSettings(); renderSettlement(); showToast(`展示角色已切換為「${role()}」`); });
+      renderOrders(); renderOpening(); renderSettings(); renderSettlement();
     })();
   </script>
 </body>
