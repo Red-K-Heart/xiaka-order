@@ -71,6 +71,18 @@
     .chip { flex: 0 0 auto; min-height: 40px; padding: 8px 13px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--surface); }
     .chip.active { border-color: var(--brand); color: var(--brand-fg); background: var(--brand); }
     .chip-count { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin-left: 5px; border-radius: 50%; color: #fff; background: #168f8b; font-size: 19.5px; font-weight: 700; line-height: 1; vertical-align: middle; }
+    .calculator-panel[hidden] { display: none; }
+    .calculator-display { min-height: 118px; display: grid; align-content: end; gap: 8px; margin: 14px 0; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-soft); text-align: right; overflow-wrap: anywhere; }
+    .calculator-expression { min-height: 28px; color: var(--muted); }
+    .calculator-value { color: var(--text); font-size: 38px; font-weight: 750; line-height: 1.15; }
+    .calculator-quick { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 12px 0; }
+    .calculator-keypad { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
+    .calculator-key { min-height: 64px; padding: 8px; border: 1px solid var(--line); border-radius: 13px; color: var(--text); background: var(--surface-soft); font-size: 24px; font-weight: 700; }
+    .calculator-key.operator { color: var(--brand-fg); background: var(--brand); }
+    .calculator-key:active { transform: scale(.98); }
+    .expense-entry { display: grid; grid-template-columns: minmax(115px,.8fr) minmax(140px,1fr) minmax(110px,.8fr) minmax(160px,1.5fr) auto; gap: 8px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .expense-entry .input { min-width: 0; }
+    @media (max-width: 560px) { .expense-entry { grid-template-columns: 1fr 1fr; } .expense-entry .expense-note { grid-column: 1 / -1; } .expense-entry .expense-remove { grid-column: 1 / -1; } }
     .order-list { display: grid; grid-template-columns: 1fr; gap: 11px; }
     .order-card { padding: 15px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
     .order-title { align-items: flex-start; }
@@ -211,11 +223,29 @@
         <div class="date-filter"><label class="sr-only" for="orderDate">依取餐日期篩選</label><input class="input" id="orderDate" type="date"></div>
       </div>
       <div class="chips" role="group" aria-label="訂單狀態篩選">
+        <button class="chip" type="button" data-filter="calculator">現場計算</button>
         <button class="chip active" type="button" data-filter="unfinished"><span>未完成</span><span class="chip-count" id="unfinishedCount" aria-label="未完成訂單數量">0</span></button>
         <button class="chip" type="button" data-filter="completed">已完成</button>
         <button class="chip" type="button" data-filter="cancelled">已取消</button>
         <button class="chip" type="button" data-filter="all">全部</button>
       </div>
+      <section class="section calculator-panel" id="calculatorPanel" aria-label="現場計算" hidden>
+        <div class="section-title"><h3>現場計算</h3><span class="muted">快速計算金額</span></div>
+        <div class="calculator-display" aria-live="polite"><div class="calculator-expression" id="calculatorExpression"></div><output class="calculator-value" id="calculatorValue">0</output></div>
+        <div class="calculator-quick" aria-label="快速加價">
+          <button class="calculator-key operator" type="button" data-calc-key="quick:30">+30</button>
+          <button class="calculator-key operator" type="button" data-calc-key="quick:35">+35</button>
+          <button class="calculator-key operator" type="button" data-calc-key="quick:40">+40</button>
+        </div>
+        <div class="calculator-keypad" aria-label="計算機按鍵">
+          <button class="calculator-key" type="button" data-calc-key="7">7</button><button class="calculator-key" type="button" data-calc-key="8">8</button><button class="calculator-key" type="button" data-calc-key="9">9</button><button class="calculator-key operator" type="button" data-calc-key="backspace" aria-label="刪除一位">⌫</button>
+          <button class="calculator-key" type="button" data-calc-key="4">4</button><button class="calculator-key" type="button" data-calc-key="5">5</button><button class="calculator-key" type="button" data-calc-key="6">6</button><button class="calculator-key operator" type="button" data-calc-key="plus">+</button>
+          <button class="calculator-key" type="button" data-calc-key="1">1</button><button class="calculator-key" type="button" data-calc-key="2">2</button><button class="calculator-key" type="button" data-calc-key="3">3</button><button class="calculator-key operator" type="button" data-calc-key="minus">-</button>
+          <button class="calculator-key operator" type="button" data-calc-key="clear">清除</button><button class="calculator-key" type="button" data-calc-key="00">00</button><button class="calculator-key" type="button" data-calc-key="0">0</button><button class="calculator-key operator" type="button" data-calc-key="equals">=</button>
+        </div>
+        <button class="btn primary full" id="saveOnsiteOrder" type="button">儲存訂單</button>
+        <div class="status-note" id="calculatorSaveNote" aria-live="polite"></div>
+      </section>
       <div class="order-list" id="orderList" aria-live="polite"></div>
     </section>
 
@@ -278,11 +308,6 @@
       <div class="section-title"><h2>每日結算</h2><span id="settlementBadge" class="badge pending">尚未建立</span></div>
       <div class="section">
         <div class="field"><label for="settlementDate">日期</label><input class="input" id="settlementDate" type="date"></div>
-        <div class="amount-row">
-          <div class="field"><label for="cashSales">現金收款金額</label><input class="input money" id="cashSales" inputmode="decimal" placeholder="0"></div>
-          <div class="field"><label for="expenseAmount">支出金額</label><input class="input money" id="expenseAmount" inputmode="decimal" placeholder="0"></div>
-          <div class="field"><label for="wasteAmount">報廢成本</label><input class="input money" id="wasteAmount" inputmode="decimal" placeholder="0"></div>
-        </div>
         <div class="section">
           <div class="section-title"><h3>商品數量盤點</h3><span class="muted">輸入今日銷售、報廢、庫存與預計採購量</span></div>
           <p class="muted">賣出數量是今日售出；報廢數量是報廢品；保留數量是庫存；下單備貨是預計向工廠叫料或採購的量。</p>
@@ -295,6 +320,19 @@
           <button class="btn danger" id="reopenSettlement" type="button" hidden>重開結算</button>
         </div>
         <div class="status-note" id="settlementMeta">建立人員與時間會在示意資料中記錄。</div>
+      </div>
+      <div class="section">
+        <div class="section-title"><h3>支出帳記錄</h3><span class="muted">可新增多筆，依類別登記金額與備註</span></div>
+        <div id="expenseLedgerList"></div>
+        <button class="btn" id="addExpenseRecord" type="button">新增支出記錄</button>
+      </div>
+      <div class="section">
+        <div class="section-title"><h3>收支與成本合計</h3><span class="muted">結算金額</span></div>
+        <div class="amount-row">
+          <div class="field"><label for="cashSales">現金收款金額</label><input class="input money" id="cashSales" inputmode="decimal" placeholder="0"></div>
+          <div class="field"><label for="expenseAmount">支出金額合計</label><input class="input money" id="expenseAmount" inputmode="decimal" placeholder="0" readonly></div>
+          <div class="field"><label for="wasteAmount">報廢成本</label><input class="input money" id="wasteAmount" inputmode="decimal" placeholder="0"></div>
+        </div>
       </div>
     </section>
   </main>
@@ -324,6 +362,7 @@
       const $ = (selector, root = document) => root.querySelector(selector);
       const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
       const STORAGE_KEY = 'xiaka-operator-demo-v1';
+      const OFFLINE_SNAPSHOT_KEY = 'xiaka-operator-offline-snapshot-v1';
       const GOOGLE_CLIENT_ID = '384565693899-acvihnpcsrtpllgoi5kf9b9amks3tb1m.apps.googleusercontent.com';
       const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzvNQOzzm16906irmZtSA_3mfWO2GDWqZSjTVEMa3Ao5A638n-JdfrRYov197A_DM1TOA/exec';
       const roleSelect = $('#roleSelect');
@@ -332,6 +371,11 @@
       let signedInOperator = null;
       let operatorCredential = '';
       let readOnlyData = null;
+      let offlineMode = !navigator.onLine;
+      let offlineSnapshotCache = null;
+      let draftSaveTimer = null;
+      let openingDirty = false;
+      let settlementDirty = false;
       let testClockOverride = null;
       let ordersRefreshTimer = null;
       let ordersRefreshInFlight = false;
@@ -341,6 +385,9 @@
       $('#todayLabel').textContent = `今天・${dateText}`;
       const updateClock = () => { $('#currentTime').textContent = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()); };
       updateClock(); setInterval(updateClock, 15000);
+      if ('serviceWorker' in navigator && location.protocol === 'https:') {
+        navigator.serviceWorker.register('./operator-sw_261026_v32.js', { scope: './' }).catch(error => console.warn('[Operator] 離線頁面快取註冊失敗：', error));
+      }
 
       const sample = {
         orders: [
@@ -353,16 +400,74 @@
         inventoryLog: [], auditLog: [], openings: {}, settlements: {}
       };
       let data;
-      try { data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || sample; }
-      catch (_) { data = sample; }
+      try { data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || JSON.parse(JSON.stringify(sample)); }
+      catch (_) { data = JSON.parse(JSON.stringify(sample)); }
+      try { offlineSnapshotCache = JSON.parse(localStorage.getItem(OFFLINE_SNAPSHOT_KEY) || 'null'); } catch (_) { offlineSnapshotCache = null; }
       if (!data.businessSettings) data.businessSettings = JSON.parse(JSON.stringify(sample.businessSettings));
       if (!data.openings) data.openings = {};
+      if (!data.settlements) data.settlements = {};
+      if (!data.orders) data.orders = [];
       let activeFilter = 'unfinished';
+      let calculatorValue = '0';
+      let calculatorOperand = null;
+      let calculatorOperator = null;
+      let calculatorReplace = false;
+      let calculatorExpression = '';
       let settingsEditMode = false;
+      let settlementExpenseDrafts = [];
+      let settlementExpenseBaseAmount = 0;
       let toastTimer;
       let cancelArmed = new Set();
 
-      function saveLocal() { if (!readOnlyData) localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+      function saveLocal() {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+        catch (error) { console.warn('[Operator] 本機暫存失敗：', error); }
+      }
+      function activateOfflineCache() {
+        const snapshot = offlineSnapshotCache?.snapshot;
+        if (!snapshot) return false;
+        const pendingSettlements = Object.fromEntries(Object.entries(data.settlements || {}).filter(([, item]) => item?.pendingLocal));
+        const pendingOrders = new Map((data.orders || []).filter(item => item?.pendingLocal).map(item => [String(item.id), item]));
+        const pendingOpenings = Object.fromEntries(Object.entries(data.openings || {}).filter(([, item]) => item?.pendingLocal));
+        data.orders = (Array.isArray(snapshot.orders) ? snapshot.orders : (data.orders || [])).map(item => pendingOrders.get(String(item.id)) || item);
+        for (const [id, item] of pendingOrders) if (!data.orders.some(order => String(order.id) === id)) data.orders.unshift(item);
+        if (!data.pendingBusinessSettings) data.businessSettings = snapshot.settings || data.businessSettings || sample.businessSettings;
+        data.cachedProducts = Array.isArray(snapshot.products) ? snapshot.products : [];
+        data.cachedBusinessCalendar = Array.isArray(snapshot.businessCalendar) ? snapshot.businessCalendar : [];
+        data.settlements = { ...(snapshot.settlements || {}), ...(data.settlements || {}), ...pendingSettlements };
+        data.openings = { ...(data.openings || {}), ...pendingOpenings };
+        if (offlineSnapshotCache.operator?.role && ['系統管理員','店長','員工'].includes(offlineSnapshotCache.operator.role)) {
+          roleSelect.value = offlineSnapshotCache.operator.role;
+          roleSelect.disabled = true;
+          signedInOperator = offlineSnapshotCache.operator;
+        } else { roleSelect.value = '員工'; roleSelect.disabled = true; }
+        $('#googleSignIn').hidden = true; $('#authSignOut').hidden = false;
+        readOnlyData = null;
+        offlineMode = true;
+        $('#connectionStatus').textContent = '離線暫存模式';
+        $('#connectionNotice').textContent = '目前使用上次讀取的資料；本機草稿會自動保存，尚未同步至試算表。';
+        $('#authUserStatus').textContent = `${signedInOperator?.name || '已載入離線資料'}・${signedInOperator?.role || '本機暫存'}・離線`; 
+        saveLocal();
+        return true;
+      }
+      function persistRemoteSnapshot(snapshot) {
+        offlineSnapshotCache = {
+          snapshot,
+          operator: signedInOperator ? { name: signedInOperator.name, email: signedInOperator.email, role: signedInOperator.role } : null,
+          cachedAt: new Date().toISOString()
+        };
+        try { localStorage.setItem(OFFLINE_SNAPSHOT_KEY, JSON.stringify(offlineSnapshotCache)); }
+        catch (error) { console.warn('[Operator] 離線資料快照保存失敗：', error); }
+      }
+      function scheduleDraftSave(panel) {
+        if (panel === 'opening') openingDirty = true;
+        if (panel === 'settlement') settlementDirty = true;
+        clearTimeout(draftSaveTimer);
+        draftSaveTimer = setTimeout(() => {
+          if (openingDirty) persistOpeningDraft();
+          if (settlementDirty) persistSettlementDraft();
+        }, 250);
+      }
       function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
       }
@@ -438,8 +543,12 @@
         try {
           const response = await requestOperatorSnapshot();
           if (signedInOperator !== operatorAtRequest) return;
-          data.orders = Array.isArray(response.data.orders) ? response.data.orders : [];
+          const pendingOrders = new Map((data.orders || []).filter(item => item?.pendingLocal).map(item => [String(item.id), item]));
+          data.orders = (Array.isArray(response.data.orders) ? response.data.orders : []).map(item => pendingOrders.get(String(item.id)) || item);
+          for (const [id, item] of pendingOrders) if (!data.orders.some(order => String(order.id) === id)) data.orders.unshift(item);
           if (readOnlyData) readOnlyData.orders = data.orders;
+          persistRemoteSnapshot(response.data);
+          saveLocal();
           renderOrders();
         } catch (error) {
           console.warn('[Operator] 訂單自動更新失敗：', error.message);
@@ -468,19 +577,31 @@
         });
       }
       async function loadOperatorSnapshot() {
+        if (!navigator.onLine && offlineSnapshotCache?.snapshot) {
+          activateOfflineCache();
+          renderOrders(); renderOpening(); renderSettings(); renderSettlement();
+          return;
+        }
         readOnlyData = { loading: true };
-        data.orders = []; data.settings = {}; data.settlements = {};
         renderOrders(); renderOpening(); renderSettings(); renderSettlement();
         $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・讀取中`;
         try {
           const response = await requestOperatorSnapshot();
+          const localSettlements = data.settlements || {};
+          const localOpenings = data.openings || {};
           readOnlyData = response.data;
           data.orders = Array.isArray(response.data.orders) ? response.data.orders : [];
-          data.settings = {};
-          data.settlements = response.data.settlements || {};
+          if (!data.pendingBusinessSettings) data.businessSettings = response.data.settings || data.businessSettings;
+          data.cachedProducts = Array.isArray(response.data.products) ? response.data.products : [];
+          data.cachedBusinessCalendar = Array.isArray(response.data.businessCalendar) ? response.data.businessCalendar : [];
+          data.settlements = { ...(response.data.settlements || {}), ...Object.fromEntries(Object.entries(localSettlements).filter(([, item]) => item?.pendingLocal)) };
+          data.openings = { ...localOpenings };
+          persistRemoteSnapshot(response.data);
+          saveLocal();
+          offlineMode = false;
           $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・已連線`;
           $('#connectionStatus').textContent = '正式試算表已連線・訂單每30秒更新';
-        $('#connectionNotice').textContent = '訂單狀態可由作業頁更新；系統管理員與店長可修改營業規則。開店紀錄、商品庫存與結算尚未連接 GAS 寫入。';
+        $('#connectionNotice').textContent = '訂單狀態可由作業頁更新；系統管理員與店長可修改營業規則。開店、結算與設定草稿會自動保存在本機，離線變更不會自動寫入試算表。';
           renderOrders(); renderOpening(); renderSettings(); renderSettlement();
           startOrdersAutoRefresh();
           showToast(`已讀取 ${data.orders.length} 筆訂單與 ${(response.data.products || []).length} 項商品`);
@@ -536,10 +657,86 @@
         clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.hidden = true; }, 2600);
       }
       const statusLabel = { pending: '待處理', preparing: '準備中', completed: '已完成', cancelled: '已取消' };
+      function formatCalculatorNumber(value) {
+        return (Number(value) || 0).toLocaleString('zh-TW', { maximumFractionDigits: 2 });
+      }
+      function renderCalculator() {
+        $('#calculatorExpression').textContent = calculatorExpression;
+        $('#calculatorValue').textContent = formatCalculatorNumber(calculatorValue);
+        $('#saveOnsiteOrder').disabled = !!readOnlyData || Number(calculatorValue) <= 0;
+        $('#calculatorSaveNote').textContent = readOnlyData
+          ? '目前連線模式尚未提供現場訂單寫入 GAS 的功能。'
+          : '儲存後會加入本機示意訂單，並列在「已完成／全部」；不會寫入試算表。';
+      }
+      function calculatePendingValue(rightValue) {
+        if (calculatorOperand === null || !calculatorOperator) return Number(calculatorValue) || 0;
+        const left = calculatorOperand;
+        const result = calculatorOperator === 'plus' ? left + rightValue : left - rightValue;
+        calculatorValue = String(Math.round(result * 100) / 100);
+        calculatorExpression = `${formatCalculatorNumber(left)} ${calculatorOperator === 'plus' ? '+' : '-'} ${formatCalculatorNumber(rightValue)} =`;
+        calculatorOperand = null; calculatorOperator = null; calculatorReplace = true;
+        return Number(calculatorValue) || 0;
+      }
+      function handleCalculatorKey(key) {
+        if (/^\d$/.test(key) || key === '00') {
+          const digits = key;
+          if (calculatorReplace) { calculatorValue = digits === '00' ? '0' : digits; calculatorReplace = false; }
+          else if (calculatorValue === '0') calculatorValue = digits === '00' ? '0' : digits;
+          else calculatorValue += digits;
+        } else if (key === 'clear') {
+          calculatorValue = '0'; calculatorOperand = null; calculatorOperator = null; calculatorReplace = false; calculatorExpression = '';
+        } else if (key === 'backspace') {
+          if (calculatorReplace) calculatorReplace = false;
+          calculatorValue = calculatorValue.length > 1 ? calculatorValue.slice(0,-1) : '0';
+        } else if (key === 'plus' || key === 'minus') {
+          if (calculatorOperand !== null && calculatorOperator && !calculatorReplace) calculatePendingValue(Number(calculatorValue) || 0);
+          calculatorOperand = Number(calculatorValue) || 0;
+          calculatorOperator = key; calculatorReplace = true;
+          calculatorExpression = `${formatCalculatorNumber(calculatorOperand)} ${key === 'plus' ? '+' : '-'}`;
+        } else if (key === 'equals') {
+          if (calculatorOperand !== null && calculatorOperator) {
+            const right = calculatorReplace ? calculatorOperand : Number(calculatorValue) || 0;
+            calculatePendingValue(right);
+          }
+        } else if (key.startsWith('quick:')) {
+          const amount = Number(key.split(':')[1]) || 0;
+          const before = Number(calculatorValue) || 0;
+          calculatorValue = String(before + amount);
+          calculatorExpression = `${formatCalculatorNumber(before)} + ${amount} =`;
+          calculatorOperand = null; calculatorOperator = null; calculatorReplace = true;
+        }
+        renderCalculator();
+      }
+      function saveOnsiteOrder() {
+        if (readOnlyData) return showToast('目前連線模式尚未開放現場訂單寫入');
+        const amount = Math.round((Number(calculatorValue) || 0) * 100) / 100;
+        if (amount <= 0) return showToast('請先計算大於 0 的訂單金額');
+        const now = new Date();
+        const orderDate = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Taipei', year:'numeric', month:'2-digit', day:'2-digit' }).format(now);
+        const timePart = new Intl.DateTimeFormat('en-GB', { timeZone:'Asia/Taipei', hour:'2-digit', minute:'2-digit', hourCycle:'h23' }).format(now);
+        const orderTime = `${orderDate} ${timePart}`;
+        const order = {
+          id: `POS-${Date.now()}`, systemId: '', orderTime, pickupDate: orderDate, pickupTime: '現場',
+          name: '現場交易', phone: '', amount, payment: '現金', status: 'completed',
+          items: [`現場計算金額 ${money(amount)}`], remarks: calculatorExpression, extraDetails: [], onsite: true, pendingLocal: !!offlineMode
+        };
+        data.orders.unshift(order); saveLocal();
+        calculatorValue = '0'; calculatorOperand = null; calculatorOperator = null; calculatorReplace = false; calculatorExpression = '';
+        renderOrders(); showToast('現場示意訂單已儲存在本機');
+      }
       function renderOrders() {
+        const calculatorMode = activeFilter === 'calculator';
+        $('.toolbar').hidden = calculatorMode;
+        $('#calculatorPanel').hidden = !calculatorMode;
+        $('#orderList').hidden = calculatorMode;
         const query = $('#orderSearch').value.trim().toLowerCase();
         const date = $('#orderDate').value;
         $('#unfinishedCount').textContent = data.orders.filter(order => ['pending', 'preparing'].includes(order.status)).length;
+        if (calculatorMode) {
+          $('#orderCount').textContent = '現場計算模式';
+          renderCalculator();
+          return;
+        }
         const visible = data.orders.filter(order => {
           const matchesStatus = activeFilter === 'all' || (activeFilter === 'unfinished' ? ['pending', 'preparing'].includes(order.status) : order.status === activeFilter);
           const matchesQuery = !query || [order.id, order.name, order.phone].some(value => String(value).toLowerCase().includes(query));
@@ -551,7 +748,7 @@
         if (!visible.length) { list.innerHTML = '<div class="empty">沒有符合條件的訂單</div>'; return; }
         list.innerHTML = visible.map(order => `
           <article class="order-card" data-order="${escapeHtml(order.id)}">
-            <div class="order-title"><span class="order-code">${escapeHtml(order.id)}</span><span class="badge ${escapeHtml(order.status)}">${statusLabel[order.status]}</span></div>
+            <div class="order-title"><span class="order-code">${escapeHtml(order.id)}</span><span class="badge ${escapeHtml(order.status)}">${statusLabel[order.status]}</span>${order.pendingLocal ? '<span class="muted">離線待同步</span>' : ''}</div>
             <div class="order-meta"><span>下單時間：${escapeHtml(order.orderTime || '—')}</span><span>取餐日期：${escapeHtml(order.pickupDate || '—')}</span><span>取餐時段：${escapeHtml(order.pickupTime || '—')}</span></div>
             <div class="order-meta"><span>姓名：${escapeHtml(order.name || '—')}</span><span>電話：${escapeHtml(order.phone || '—')}</span></div>
             ${order.items.map(item => `<div class="item-row"><span>${escapeHtml(item)}</span></div>`).join('')}
@@ -563,6 +760,7 @@
       async function setOrderStatus(id, status) {
         const order = data.orders.find(item => item.id === id); if (!order) return;
         if (status === 'cancelled' && !confirm('確認將此訂單狀態改為「已取消」？')) return;
+        if (offlineMode) { order.status = status; order.pendingLocal = true; order.localUpdatedAt = new Date().toISOString(); saveLocal(); renderOrders(); showToast('離線變更已暫存，尚未同步至試算表'); return; }
         try { await requestOperatorWrite('updateOrderStatus', order, { status }); showToast(`訂單已更新為「${statusLabel[status]}」`); await loadOperatorSnapshot(); }
         catch (error) { showToast(error.message); }
       }
@@ -574,7 +772,7 @@
         $('#editAmount').value = order.amount; $('#editRemarks').value = order.remarks || ''; $('#editDialog').showModal();
       }
       function getDaySettings(day) {
-        if (readOnlyData) {
+        if (readOnlyData && !offlineMode) {
           const source = readOnlyData.settings || {};
           const calendarDay = (readOnlyData.businessCalendar || []).find(item => item.date === day) || {};
           const weekdayCode = ['SUN','MON','TUE','WED','THU','FRI','SAT'][new Date(`${day}T12:00:00Z`).getUTCDay()];
@@ -599,7 +797,20 @@
             stock: readOnlyData.products || []
           };
         }
-        if (!data.settings[day]) data.settings[day] = JSON.parse(JSON.stringify(sample.settings[today]));
+        if (!data.settings[day]) {
+          const config = data.businessSettings || sample.businessSettings;
+          const calendarDay = (data.cachedBusinessCalendar || []).find(item => item.date === day) || {};
+          const weekday = ['SUN','MON','TUE','WED','THU','FRI','SAT'][new Date(`${day}T12:00:00Z`).getUTCDay()];
+          const businessDays = Array.isArray(config.businessDays) ? config.businessDays : ['MON','TUE','WED','THU','FRI','SAT'];
+          data.settings[day] = {
+            closed: !!config.closed || !!calendarDay.closed || (calendarDay.businessType !== 'SPECIAL_OPEN' && !businessDays.includes(weekday)),
+            openTime: calendarDay.openTime || config.openTime || '06:00', closeTime: calendarDay.closeTime || config.closeTime || '17:30',
+            pickupStartTime: calendarDay.pickupStartTime || config.pickupStartTime || '16:00', pickupEndTime: calendarDay.pickupEndTime || config.pickupEndTime || '17:30',
+            pickupIntervalMinutes: Number(calendarDay.pickupIntervalMinutes || config.pickupIntervalMinutes) || 30,
+            disabledSlots: config.disabledSlots || [], note: calendarDay.note || '',
+            stock: JSON.parse(JSON.stringify(data.cachedProducts?.length ? data.cachedProducts : sample.settings[today].stock))
+          };
+        }
         const demo = data.settings[day];
         demo.pickupStartTime = demo.pickupStartTime || '16:00';
         demo.pickupEndTime = demo.pickupEndTime || '17:30';
@@ -804,7 +1015,7 @@
       function renderOpening() {
         const day = $('#openingDate').value || today;
         const record = data.openings[day];
-        const locked = !!readOnlyData || !canClose() || record?.status === 'completed';
+        const locked = (!!readOnlyData && !offlineMode) || !canClose() || record?.status === 'completed';
         $('#openingBadge').textContent = record ? ({ draft:'草稿', completed:'已完成開店' }[record.status] || '草稿') : '尚未建立';
         $('#openingBadge').className = `badge ${record?.status === 'completed' ? 'completed' : 'pending'}`;
         $('#openingFloat').value = record?.floatAmount ?? '';
@@ -823,105 +1034,184 @@
         $('#saveOpeningDraft').disabled = locked;
         $('#completeOpening').disabled = locked;
         $('#openingMeta').textContent = record
-          ? `最後儲存：${record.updatedAt ? new Date(record.updatedAt).toLocaleString('zh-TW') : '—'} ・操作人：${record.actor || '—'}`
+          ? `最後儲存：${record.updatedAt ? new Date(record.updatedAt).toLocaleString('zh-TW') : '—'} ・操作人：${record.actor || '—'}${record.pendingLocal ? ' ・離線待同步' : ''}`
           : readOnlyData ? '連線模式尚未提供開店資料寫入功能。' : '開店資料只儲存在此瀏覽器；完成後不可修改。';
       }
-      function saveOpening(status) {
-        if (readOnlyData) return showToast('目前連線模式尚未開放開店資料寫入');
-        if (!canClose()) return showToast('只有系統管理員或店長可以完成開店作業');
-        const day = $('#openingDate').value;
-        const old = data.openings[day] || {};
+      function collectOpeningInventory() {
         const inventory = {};
-        const openingGrid = $('.opening-inventory-grid');
-        if (openingGrid) {
-          const cells = [...openingGrid.children];
-          openingGrid.querySelectorAll('.inventory-product').forEach(productCell => {
-            const index = cells.indexOf(productCell);
-            const incoming = cells[index + 1]?.querySelector('[data-opening-incoming]');
-            const reserved = cells[index + 2]?.querySelector('[data-opening-reserved]');
-            const ordered = cells[index + 3]?.querySelector('[data-opening-ordered]');
-            inventory[productCell.dataset.productId] = {
-              incoming: Math.max(0, Number(incoming?.value) || 0),
-              reserved: Math.max(0, Number(reserved?.value) || 0),
-              ordered: Math.max(0, Number(ordered?.textContent) || 0)
+        const grid = $('.opening-inventory-grid');
+        if (!grid) return inventory;
+        const cells = [...grid.children];
+        grid.querySelectorAll('.inventory-product').forEach(productCell => {
+          const index = cells.indexOf(productCell);
+          inventory[productCell.dataset.productId] = {
+            incoming: Math.max(0, Number(cells[index + 1]?.querySelector('[data-opening-incoming]')?.value) || 0),
+            reserved: Math.max(0, Number(cells[index + 2]?.querySelector('[data-opening-reserved]')?.value) || 0),
+            ordered: Math.max(0, Number(cells[index + 3]?.querySelector('[data-opening-ordered]')?.textContent) || 0)
+          };
+        });
+        return inventory;
+      }
+      function collectSettlementValues() {
+        const inventoryCounts = {}, inventory = {};
+        const grid = $('.settlement-inventory-grid');
+        if (grid) {
+          const cells = [...grid.children];
+          grid.querySelectorAll('.inventory-product').forEach(productCell => {
+            const index = cells.indexOf(productCell), id = productCell.dataset.productId;
+            const reserved = Math.max(0, Number(cells[index + 3]?.querySelector('[data-settlement-reserved]')?.value) || 0);
+            inventoryCounts[id] = reserved;
+            inventory[id] = {
+              sold: Math.max(0, Number(cells[index + 1]?.querySelector('[data-settlement-sold]')?.value) || 0),
+              waste: Math.max(0, Number(cells[index + 2]?.querySelector('[data-settlement-waste]')?.value) || 0),
+              reserved,
+              orderPrep: Math.max(0, Number(cells[index + 4]?.querySelector('[data-settlement-order]')?.value) || 0)
             };
           });
         }
+        const expenses = settlementExpenseDrafts.map(item => ({ category: item.category || '其他', name: String(item.name || '').trim(), amount: Math.max(0, Number(item.amount) || 0), note: String(item.note || '').trim() }));
+        const expenseAmount = settlementExpenseBaseAmount + expenses.reduce((sum, item) => sum + item.amount, 0);
+        return { inventoryCounts, inventory, expenses, expenseAmount };
+      }
+      function persistOpeningDraft() {
+        if (readOnlyData && !offlineMode) return;
+        const day = $('#openingDate').value || today;
+        if (!day || !$('.opening-inventory-grid') || !canClose() || data.openings[day]?.status === 'completed') return;
+        const old = data.openings[day] || {};
+        data.openings[day] = { ...old, date: day, status: old.status || 'draft', floatAmount: Number($('#openingFloat').value) || 0,
+          inventory: collectOpeningInventory(), weather: $('#openingWeather').value, note: $('#openingNote').value.trim(),
+          actor: role(), updatedAt: new Date().toISOString(), pendingLocal: !!offlineMode };
+        saveLocal(); openingDirty = false;
+      }
+      function persistSettlementDraft() {
+        if (readOnlyData && !offlineMode) return;
+        const day = $('#settlementDate').value || today;
+        const old = data.settlements[day] || {};
+        if (!day || !$('.settlement-inventory-grid') || old.status === 'closed') return;
+        const values = collectSettlementValues();
+        data.settlements[day] = { ...old, date: day, status: old.status || 'draft', ...values,
+          cashSales: Number($('#cashSales').value) || 0, wasteAmount: Number($('#wasteAmount').value) || 0,
+          note: $('#settlementNote').value.trim(), actor: role(), updatedAt: new Date().toISOString(), pendingLocal: !!offlineMode };
+        saveLocal(); settlementDirty = false;
+      }
+      function saveOpening(status) {
+        if (readOnlyData && !offlineMode) return showToast('目前連線模式尚未開放開店資料寫入');
+        if (!canClose()) return showToast('只有系統管理員或店長可以完成開店作業');
+        const day = $('#openingDate').value;
+        const old = data.openings[day] || {};
+        const inventory = collectOpeningInventory();
         data.openings[day] = {
           ...old, date: day, status, floatAmount: Number($('#openingFloat').value) || 0,
           inventory, weather: $('#openingWeather').value, note: $('#openingNote').value.trim(),
-          actor: role(), updatedAt: new Date().toISOString()
+          actor: role(), updatedAt: new Date().toISOString(), pendingLocal: !!offlineMode
         };
         saveLocal(); renderOpening();
         showToast(status === 'completed' ? '開店作業已完成' : '開店草稿已儲存');
+      }
+      function updateExpenseTotal() {
+        const itemTotal = settlementExpenseDrafts.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        $('#expenseAmount').value = String(settlementExpenseBaseAmount + itemTotal);
+      }
+      function renderExpenseLedger(record) {
+        const locked = (!!readOnlyData && !offlineMode) || record?.status === 'closed';
+        const legacyNotice = settlementExpenseBaseAmount > 0
+          ? `<div class="status-note">既有未分項支出 ${money(settlementExpenseBaseAmount)} 已納入支出合計。</div>`
+          : '';
+        const rows = settlementExpenseDrafts.map((item, index) => `<div class="expense-entry" data-expense-index="${index}">
+          <select class="select" data-expense-field="category" aria-label="支出類別" ${locked ? 'disabled' : ''}>
+            <option value="租金" ${item.category === '租金' ? 'selected' : ''}>租金</option><option value="器材" ${item.category === '器材' ? 'selected' : ''}>器材</option><option value="耗材" ${item.category === '耗材' ? 'selected' : ''}>耗材</option><option value="其他" ${!['租金','器材','耗材'].includes(item.category) ? 'selected' : ''}>其他</option>
+          </select>
+          <input class="input" type="text" placeholder="名稱" value="${escapeHtml(item.name || '')}" data-expense-field="name" aria-label="支出名稱" ${locked ? 'disabled' : ''}>
+          <input class="input" type="number" min="0" step="1" inputmode="decimal" placeholder="支出金額" value="${item.amount ?? ''}" data-expense-field="amount" aria-label="支出金額" ${locked ? 'disabled' : ''}>
+          <input class="input expense-note" type="text" placeholder="備註" value="${escapeHtml(item.note || '')}" data-expense-field="note" aria-label="支出備註" ${locked ? 'disabled' : ''}>
+          <button class="btn danger expense-remove" type="button" data-expense-action="remove" data-index="${index}" ${locked ? 'disabled' : ''}>移除</button>
+        </div>`).join('');
+        $('#expenseLedgerList').innerHTML = `${legacyNotice}${rows || '<div class="empty">尚無支出明細，請新增記錄。</div>'}`;
+        $('#addExpenseRecord').disabled = locked;
+        updateExpenseTotal();
       }
       function renderSettlement() {
         const day = $('#settlementDate').value || today;
         const record = data.settlements[day];
         $('#settlementBadge').textContent = record ? ({ draft: '草稿', closed: '已結算', reopened: '已重開' }[record.status] || '草稿') : '尚未建立';
         $('#settlementBadge').className = 'badge ' + (record?.status === 'closed' ? 'completed' : 'pending');
-        $('#reopenSettlement').hidden = !!readOnlyData || !(record?.status === 'closed' && canClose());
-        $('#closeSettlement').disabled = !!readOnlyData || !canClose() || record?.status === 'closed';
-        $('#saveDraft').disabled = !!readOnlyData || record?.status === 'closed';
-        $('#settlementMeta').textContent = record ? `最後儲存：${record.updatedAt ? new Date(record.updatedAt).toLocaleString('zh-TW') : '—'} ・操作人：${record.actor || '—'}` : (readOnlyData ? '此日期尚無結算資料。' : '建立人員與時間會在示意資料中記錄。');
+        $('#reopenSettlement').hidden = (!!readOnlyData && !offlineMode) || !(record?.status === 'closed' && canClose());
+        $('#closeSettlement').disabled = (!!readOnlyData && !offlineMode) || !canClose() || record?.status === 'closed';
+        $('#saveDraft').disabled = (!!readOnlyData && !offlineMode) || record?.status === 'closed';
+        $('#settlementMeta').textContent = record ? `最後儲存：${record.updatedAt ? new Date(record.updatedAt).toLocaleString('zh-TW') : '—'} ・操作人：${record.actor || '—'}${record.pendingLocal ? ' ・離線待同步' : ''}` : (readOnlyData ? '此日期尚無結算資料。' : '建立人員與時間會在示意資料中記錄。');
         const settings = getDaySettings(day);
         const inventoryCounts = record?.inventoryCounts || {};
         const inventory = record?.inventory || {};
         $('#settlementInventoryList').innerHTML = settings.stock.length
           ? `<div class="inventory-scroll"><div class="inventory-grid settlement-inventory-grid"><div class="inventory-heading">品名</div><div class="inventory-heading">賣出數量</div><div class="inventory-heading">報廢數量</div><div class="inventory-heading">保留數量</div><div class="inventory-heading">下單備貨</div>${settings.stock.map(item => {
             const row = inventory[item.id] || {};
-            const disabled = readOnlyData || record?.status === 'closed' ? 'disabled' : '';
+            const disabled = (readOnlyData && !offlineMode) || record?.status === 'closed' ? 'disabled' : '';
             return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(item.name)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-sold value="${row.sold ?? ''}" aria-label="${escapeHtml(item.name)}賣出數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-waste value="${row.waste ?? ''}" aria-label="${escapeHtml(item.name)}報廢數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? inventoryCounts[item.id] ?? (Number(item.quantity) || 0)}" data-settlement-reserved aria-label="${escapeHtml(item.name)}保留數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-order value="${row.orderPrep ?? ''}" aria-label="${escapeHtml(item.name)}下單備貨" ${disabled}></div>`;
           }).join('')}</div></div>`
           : '<div class="empty">此日期沒有商品資料</div>';
         if (record) {
-          $('#cashSales').value = record.cashSales ?? ''; $('#expenseAmount').value = record.expenseAmount ?? '';
+          $('#cashSales').value = record.cashSales ?? '';
           $('#wasteAmount').value = record.wasteAmount ?? ''; $('#settlementNote').value = record.note ?? '';
         } else {
-          ['cashSales','expenseAmount','wasteAmount','settlementNote'].forEach(id => { $('#'+id).value = ''; });
+          ['cashSales','wasteAmount','settlementNote'].forEach(id => { $('#'+id).value = ''; });
         }
-        ['cashSales','expenseAmount','wasteAmount','settlementNote'].forEach(id => { $('#'+id).disabled = !!readOnlyData || record?.status === 'closed'; });
+        settlementExpenseDrafts = Array.isArray(record?.expenses) ? record.expenses.map(item => ({ category: item.category || '其他', name: item.name || '', amount: Number(item.amount) || 0, note: item.note || '' })) : [];
+        settlementExpenseBaseAmount = record?.expenseBaseAmount !== undefined
+          ? Number(record.expenseBaseAmount) || 0
+          : Array.isArray(record?.expenses) ? 0 : Number(record?.expenseAmount) || 0;
+        renderExpenseLedger(record);
+        ['cashSales','wasteAmount','settlementNote'].forEach(id => { $('#'+id).disabled = (readOnlyData && !offlineMode) || record?.status === 'closed'; });
       }
       function saveSettlement(status) {
-        if (readOnlyData) return showToast('目前為唯讀連線，尚未開放結算寫入');
+        if (readOnlyData && !offlineMode) return showToast('目前為唯讀連線，尚未開放結算寫入');
         const day = $('#settlementDate').value;
         const old = data.settlements[day] || {};
-        const inventoryCounts = {};
-        const inventory = {};
-        const inventoryGrid = $('.settlement-inventory-grid');
-        if (inventoryGrid) {
-          const cells = [...inventoryGrid.children];
-          inventoryGrid.querySelectorAll('.inventory-product').forEach(productCell => {
-            const index = cells.indexOf(productCell);
-            const sold = cells[index + 1]?.querySelector('[data-settlement-sold]');
-            const waste = cells[index + 2]?.querySelector('[data-settlement-waste]');
-            const reserved = cells[index + 3]?.querySelector('[data-settlement-reserved]');
-            const orderPrep = cells[index + 4]?.querySelector('[data-settlement-order]');
-            const productId = productCell.dataset.productId;
-            const reservedValue = Math.max(0, Number(reserved?.value) || 0);
-            inventoryCounts[productId] = reservedValue;
-            inventory[productId] = {
-              sold: Math.max(0, Number(sold?.value) || 0),
-              waste: Math.max(0, Number(waste?.value) || 0),
-              reserved: reservedValue,
-              orderPrep: Math.max(0, Number(orderPrep?.value) || 0)
-            };
-          });
-        }
-        data.settlements[day] = { ...old, date: day, status, cashSales: Number($('#cashSales').value) || 0, expenseAmount: Number($('#expenseAmount').value) || 0, wasteAmount: Number($('#wasteAmount').value) || 0, inventoryCounts, inventory, note: $('#settlementNote').value.trim(), actor: role(), updatedAt: new Date().toISOString() };
+        const { inventoryCounts, inventory, expenses, expenseAmount } = collectSettlementValues();
+        data.settlements[day] = { ...old, date: day, status, cashSales: Number($('#cashSales').value) || 0, expenseAmount, expenseBaseAmount: settlementExpenseBaseAmount, expenses, wasteAmount: Number($('#wasteAmount').value) || 0, inventoryCounts, inventory, note: $('#settlementNote').value.trim(), actor: role(), updatedAt: new Date().toISOString(), pendingLocal: !!offlineMode };
         saveLocal(); renderSettlement(); showToast(status === 'closed' ? '示意結算已完成' : '示意結算草稿已儲存');
       }
+      function updateNetworkMode() {
+        if (!navigator.onLine) {
+          offlineMode = true;
+          if (openingDirty) persistOpeningDraft();
+          if (settlementDirty) persistSettlementDraft();
+          if (readOnlyData && !readOnlyData.loading) persistRemoteSnapshot(readOnlyData);
+          if (offlineSnapshotCache?.snapshot) activateOfflineCache();
+          else {
+            offlineMode = true;
+            $('#connectionStatus').textContent = '離線模式・無可用快照';
+            $('#connectionNotice').textContent = '網路中斷，目前沒有可用的上次讀取資料快照。輸入資料仍會保存於此瀏覽器。';
+          }
+          renderOrders(); renderOpening(); renderSettings(); renderSettlement();
+          return;
+        }
+        if (offlineMode) {
+          $('#connectionStatus').textContent = '網路已恢復・本機草稿待處理';
+          $('#connectionNotice').textContent = '網路已恢復；離線期間的本機草稿仍未同步至試算表，請登入並核對後再處理。';
+        }
+      }
+      window.addEventListener('offline', updateNetworkMode);
+      window.addEventListener('online', updateNetworkMode);
+      window.addEventListener('pagehide', () => { if (openingDirty) persistOpeningDraft(); if (settlementDirty) persistSettlementDraft(); saveLocal(); });
+      ['input','change'].forEach(type => {
+        $('#openingPanel').addEventListener(type, event => { if (event.target.matches('input,select,textarea')) scheduleDraftSave('opening'); });
+        $('#settlementPanel').addEventListener(type, event => { if (event.target.matches('input,select,textarea,[data-expense-field]')) scheduleDraftSave('settlement'); });
+      });
       $$('.tab').forEach(tab => tab.addEventListener('click', () => {
         $$('.tab').forEach(item => item.setAttribute('aria-selected', String(item === tab)));
         $$('.panel').forEach(panel => { panel.hidden = panel.id !== tab.getAttribute('aria-controls'); });
         if (tab.getAttribute('aria-controls') === 'ordersPanel') refreshOrdersFromSheet();
         if (tab.getAttribute('aria-controls') === 'openingPanel') renderOpening();
-        if (tab.getAttribute('aria-controls') === 'settlementPanel') renderSettlement();
       }));
       document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshOrdersFromSheet(); });
       $$('.chip').forEach(button => button.addEventListener('click', () => {
         $$('.chip').forEach(item => item.classList.toggle('active', item === button)); activeFilter = button.dataset.filter; renderOrders();
       }));
+      $('#calculatorPanel').addEventListener('click', event => {
+        const button = event.target.closest('[data-calc-key]');
+        if (button) handleCalculatorKey(button.dataset.calcKey);
+      });
+      $('#saveOnsiteOrder').addEventListener('click', saveOnsiteOrder);
       $('#orderSearch').addEventListener('input', renderOrders); $('#orderDate').addEventListener('change', renderOrders);
       $('#orderList').addEventListener('click', event => {
         const button = event.target.closest('[data-action]'); if (!button) return;
@@ -938,6 +1228,7 @@
         event.preventDefault(); const order = data.orders.find(item => item.id === $('#editOrderId').value); if (!order) return;
         if (!confirm('確認修改訂單資料與金額？')) return;
         const changes = { pickupDate: $('#editPickupDate').value, pickupTime: $('#editPickupTime').value.trim(), name: $('#editName').value.trim(), phone: $('#editPhone').value.trim(), amount: Number($('#editAmount').value) || 0, remarks: $('#editRemarks').value.trim() };
+        if (offlineMode) { Object.assign(order, changes, { pendingLocal: true, localUpdatedAt: new Date().toISOString() }); saveLocal(); $('#editDialog').close(); renderOrders(); showToast('離線修改已暫存，尚未同步至試算表'); return; }
         try { await requestOperatorWrite('updateOrderDetails', order, changes); $('#editDialog').close(); showToast('訂單資料已更新'); await loadOperatorSnapshot(); }
         catch (error) { showToast(error.message); }
       });
@@ -1018,6 +1309,7 @@
           $('#saveSettings').disabled = true;
           try {
             await requestBusinessSettingsWrite(changes);
+            data.pendingBusinessSettings = false;
             settingsEditMode = false;
             await loadOperatorSnapshot();
             showToast('營業規則已更新並記錄異動');
@@ -1028,6 +1320,7 @@
         const day = $('#settingDate').value || today, settings = getDaySettings(day);
         const oldStock = JSON.parse(JSON.stringify(settings.stock));
         data.businessSettings = { openTime, closeTime, pickupStartTime, pickupEndTime, pickupIntervalMinutes, businessDays };
+        if (offlineMode) data.pendingBusinessSettings = true;
         settings.openTime = openTime; settings.closeTime = closeTime; settings.pickupStartTime = pickupStartTime;
         settings.pickupEndTime = pickupEndTime; settings.pickupIntervalMinutes = pickupIntervalMinutes;
         settings.slots = buildPickupSlots(day, pickupStartTime, pickupEndTime, pickupIntervalMinutes, settings.disabledSlots || [], !!settings.closed);
@@ -1053,12 +1346,45 @@
         settingsEditMode = false; renderOpening(); renderSettings(); renderSettlement();
       });
       $('#saveDraft').addEventListener('click', () => saveSettlement('draft'));
+      $('#addExpenseRecord').addEventListener('click', () => {
+        const record = data.settlements[$('#settlementDate').value || today];
+        if ((readOnlyData && !offlineMode) || record?.status === 'closed') return;
+        settlementExpenseDrafts.push({ category:'其他', name:'', amount:'', note:'' });
+        renderExpenseLedger(record);
+        scheduleDraftSave('settlement');
+      });
+      $('#expenseLedgerList').addEventListener('input', event => {
+        const field = event.target.closest('[data-expense-field]');
+        if (!field) return;
+        const row = field.closest('[data-expense-index]');
+        const item = settlementExpenseDrafts[Number(row?.dataset.expenseIndex)];
+        if (!item) return;
+        item[field.dataset.expenseField] = field.value;
+        if (field.dataset.expenseField === 'amount') updateExpenseTotal();
+        scheduleDraftSave('settlement');
+      });
+      $('#expenseLedgerList').addEventListener('change', event => {
+        const field = event.target.closest('[data-expense-field="category"]');
+        if (!field) return;
+        const row = field.closest('[data-expense-index]');
+        const item = settlementExpenseDrafts[Number(row?.dataset.expenseIndex)];
+        if (item) item.category = field.value;
+        scheduleDraftSave('settlement');
+      });
+      $('#expenseLedgerList').addEventListener('click', event => {
+        const button = event.target.closest('[data-expense-action="remove"]');
+        if (!button) return;
+        settlementExpenseDrafts.splice(Number(button.dataset.index), 1);
+        renderExpenseLedger(data.settlements[$('#settlementDate').value || today]);
+        scheduleDraftSave('settlement');
+      });
       $('#closeSettlement').addEventListener('click', () => { if (canClose() && confirm('確認完成這一天的結算？')) saveSettlement('closed'); });
       $('#reopenSettlement').addEventListener('click', () => {
-        if (readOnlyData || !canClose() || !confirm('確認重開已完成的結算？')) return;
+        if ((readOnlyData && !offlineMode) || !canClose() || !confirm('確認重開已完成的結算？')) return;
         const record = data.settlements[$('#settlementDate').value]; if (record) { record.status = 'reopened'; record.actor = role(); record.updatedAt = new Date().toISOString(); saveLocal(); renderSettlement(); showToast('示意結算已重開'); }
       });
       roleSelect.addEventListener('change', () => { renderOpening(); renderSettings(); renderSettlement(); showToast(`展示角色已切換為「${role()}」`); });
+      if (!navigator.onLine && offlineSnapshotCache?.snapshot) activateOfflineCache();
       renderOrders(); renderOpening(); renderSettings(); renderSettlement();
     })();
   </script>
