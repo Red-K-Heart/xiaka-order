@@ -363,6 +363,7 @@
       const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
       const STORAGE_KEY = 'xiaka-operator-demo-v1';
       const OFFLINE_SNAPSHOT_KEY = 'xiaka-operator-offline-snapshot-v1';
+      const AUTH_SESSION_KEY = 'xiaka-operator-auth-session-v1';
       const GOOGLE_CLIENT_ID = '384565693899-acvihnpcsrtpllgoi5kf9b9amks3tb1m.apps.googleusercontent.com';
       const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzvNQOzzm16906irmZtSA_3mfWO2GDWqZSjTVEMa3Ao5A638n-JdfrRYov197A_DM1TOA/exec';
       const roleSelect = $('#roleSelect');
@@ -458,6 +459,37 @@
         };
         try { localStorage.setItem(OFFLINE_SNAPSHOT_KEY, JSON.stringify(offlineSnapshotCache)); }
         catch (error) { console.warn('[Operator] 離線資料快照保存失敗：', error); }
+      }
+      function clearPersistedAuthSession() {
+        try { sessionStorage.removeItem(AUTH_SESSION_KEY); } catch (_) {}
+      }
+      function getCredentialExpiry(credential) {
+        try {
+          const payloadPart = String(credential || '').split('.')[1];
+          if (!payloadPart) return 0;
+          const base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+          const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='));
+          const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+          const payload = JSON.parse(new TextDecoder().decode(bytes));
+          return Number(payload.exp) * 1000 || 0;
+        } catch (_) { return 0; }
+      }
+      function persistAuthSession() {
+        const expiresAt = getCredentialExpiry(operatorCredential);
+        if (!expiresAt || expiresAt <= Date.now()) { clearPersistedAuthSession(); return; }
+        try { sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ credential: operatorCredential, expiresAt })); }
+        catch (error) { console.warn('[Operator] 登入狀態暫存失敗：', error); }
+      }
+      function restoreAuthSession() {
+        if (!navigator.onLine) return;
+        try {
+          const saved = JSON.parse(sessionStorage.getItem(AUTH_SESSION_KEY) || 'null');
+          if (!saved?.credential || !Number.isFinite(Number(saved.expiresAt)) || Number(saved.expiresAt) <= Date.now() + 30000) {
+            clearPersistedAuthSession();
+            return;
+          }
+          handleGoogleCredential({ credential: saved.credential }, true);
+        } catch (_) { clearPersistedAuthSession(); }
       }
       function scheduleDraftSave(panel) {
         if (panel === 'opening') openingDirty = true;
@@ -612,17 +644,19 @@
       }
       function showAuthError(message) {
         clearTimeout(authTimeout); pendingAuthState = '';
+        operatorCredential = '';
+        clearPersistedAuthSession();
         $('#authUserStatus').textContent = message;
         $('#googleSignIn').hidden = false; $('#authSignOut').hidden = true;
       }
-      function handleGoogleCredential(response) {
+      function handleGoogleCredential(response, restoring = false) {
         if (!response?.credential) { showAuthError('未取得 Google 登入憑證'); return; }
         if (!GAS_WEB_APP_URL.startsWith('https://script.google.com/macros/s/') || !GAS_WEB_APP_URL.endsWith('/exec')) {
           showAuthError('請先設定測試用 GAS /exec 網址'); return;
         }
         operatorCredential = response.credential;
         pendingAuthState = makeAuthState();
-        $('#authUserStatus').textContent = '正在由 GAS 驗證帳號與角色…';
+        $('#authUserStatus').textContent = restoring ? '正在恢復登入狀態…' : '正在由 GAS 驗證帳號與角色…';
         $('#googleSignIn').hidden = true;
         clearTimeout(authTimeout);
         authTimeout = setTimeout(() => showAuthError('登入驗證逾時，請重試'), 65000);
@@ -636,6 +670,7 @@
           if (!['系統管理員', '店長', '員工'].includes(signedInOperator.role)) {
             signedInOperator = null; showAuthError('帳號角色設定無效，請聯絡管理者'); return;
           }
+          persistAuthSession();
           roleSelect.value = signedInOperator.role; roleSelect.disabled = true;
           $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}`;
           $('#authSignOut').hidden = false;
@@ -646,6 +681,7 @@
         if (!window.google?.accounts?.id) return;
         google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleCredential, auto_select: false });
         google.accounts.id.renderButton($('#googleSignIn'), { type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill', width: 210 });
+        restoreAuthSession();
       }
       const googleIdentityScript = document.createElement('script');
       googleIdentityScript.src = 'https://accounts.google.com/gsi/client'; googleIdentityScript.async = true;
@@ -1337,6 +1373,7 @@
       $('#settlementDate').addEventListener('change', renderSettlement);
       $('#authSignOut').addEventListener('click', () => {
         clearInterval(ordersRefreshTimer); ordersRefreshTimer = null;
+        clearPersistedAuthSession();
         signedInOperator = null; operatorCredential = ''; readOnlyData = null; data = JSON.parse(JSON.stringify(sample));
         roleSelect.disabled = false; roleSelect.value = '店長';
         if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
