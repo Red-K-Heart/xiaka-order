@@ -201,12 +201,12 @@
         <div class="section-title"><h3>營業規則設定</h3><span class="muted">系統管理員／店長可編輯</span></div>
         <p class="schedule-date" id="scheduleTargetDate" aria-live="polite"></p>
         <div class="field-inline">
-          <div class="field"><label for="openTime">可訂餐開始時間（24 小時制）</label><input class="input" id="openTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="16:00"></div>
-          <div class="field"><label for="closeTime">可訂餐結束時間（24 小時制）</label><input class="input" id="closeTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="21:30"></div>
+          <div class="field"><label for="openTime">可訂餐開始時間（24 小時制）</label><select class="select" id="openTime" aria-label="可訂餐開始時間"></select></div>
+          <div class="field"><label for="closeTime">可訂餐結束時間（24 小時制）</label><select class="select" id="closeTime" aria-label="可訂餐結束時間"></select></div>
         </div>
         <div class="field-inline">
-          <div class="field"><label for="pickupStartTime">可取餐開始時間（24 小時制）</label><input class="input" id="pickupStartTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="16:00"></div>
-          <div class="field"><label for="pickupEndTime">可取餐結束時間（24 小時制）</label><input class="input" id="pickupEndTime" type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="17:30"></div>
+          <div class="field"><label for="pickupStartTime">可取餐開始時間（24 小時制）</label><select class="select" id="pickupStartTime" aria-label="可取餐開始時間"></select></div>
+          <div class="field"><label for="pickupEndTime">可取餐結束時間（24 小時制）</label><select class="select" id="pickupEndTime" aria-label="可取餐結束時間"></select></div>
         </div>
         <div class="field"><label for="pickupIntervalMinutes">取餐時段間隔（分鐘）</label><input class="input" id="pickupIntervalMinutes" type="number" min="1" max="720" step="1" inputmode="numeric" value="30"></div>
         <div class="field"><span class="field-label">每週營業日</span><div class="weekday-grid" id="businessDaysOptions" role="group" aria-label="每週營業日">
@@ -621,6 +621,22 @@
         });
         $('#businessDateOptions').innerHTML = choices.join('');
       }
+      function populateTimeChoices(intervalValue, selectedValues = {}) {
+        const interval = Math.max(1, Math.min(720, Number(intervalValue) || 30));
+        const regularTimes = [];
+        for (let minutes = 0; minutes < 24 * 60; minutes += interval) {
+          regularTimes.push(`${String(Math.floor(minutes / 60)).padStart(2,'0')}:${String(minutes % 60).padStart(2,'0')}`);
+        }
+        ['openTime','closeTime','pickupStartTime','pickupEndTime'].forEach(id => {
+          const select = $('#'+id);
+          const selected = selectedValues[id] || select.value || ({ openTime:'06:00', closeTime:'17:30', pickupStartTime:'16:00', pickupEndTime:'17:30' }[id]);
+          const times = [...regularTimes];
+          if (selected && !times.includes(selected)) times.push(selected);
+          times.sort((a,b) => a.localeCompare(b));
+          select.innerHTML = times.map(time => `<option value="${time}">${time}${time === selected && !regularTimes.includes(time) ? '（目前設定）' : ''}</option>`).join('');
+          select.value = selected;
+        });
+      }
       function parseTestClock(value) {
         const digits = String(value || '').trim();
         if (!/^\d{12}$/.test(digits)) throw new Error('請輸入 12 位數時間，格式為 yyyymmddhhmm。');
@@ -675,9 +691,12 @@
         renderBusinessDateOptions(day);
         $('#businessTestResult').textContent = getBusinessTestStatus(day);
         $('#closedToggle').checked = !!settings.closed; $('#specialNote').value = settings.note || '';
-        $('#openTime').value = config.openTime || '06:00'; $('#closeTime').value = config.closeTime || '17:30';
-        $('#pickupStartTime').value = config.pickupStartTime || '16:00'; $('#pickupEndTime').value = config.pickupEndTime || '17:30';
-        $('#pickupIntervalMinutes').value = Number(config.pickupIntervalMinutes) || 30;
+        const pickupIntervalMinutes = Number(config.pickupIntervalMinutes) || 30;
+        $('#pickupIntervalMinutes').value = pickupIntervalMinutes;
+        populateTimeChoices(pickupIntervalMinutes, {
+          openTime: config.openTime || '06:00', closeTime: config.closeTime || '17:30',
+          pickupStartTime: config.pickupStartTime || '16:00', pickupEndTime: config.pickupEndTime || '17:30'
+        });
         $$('[data-business-day]').forEach(input => { input.checked = businessDays.includes(input.value); input.disabled = !canEdit; });
         updateBusinessDaysSummary();
         const weekdayNames = { MON:'週一', TUE:'週二', WED:'週三', THU:'週四', FRI:'週五', SAT:'週六', SUN:'週日' };
@@ -767,12 +786,16 @@
         renderSettings();
       });
       $$('[data-business-day]').forEach(input => input.addEventListener('change', updateBusinessDaysSummary));
-      ['pickupStartTime','pickupEndTime','pickupIntervalMinutes'].forEach(id => $('#'+id).addEventListener('input', () => {
-        const day = $('#settingDate').value || today, settings = getDaySettings(day);
+      const updatePickupPreview = () => {
         const interval = Number($('#pickupIntervalMinutes').value) || 30;
+        const selectedValues = Object.fromEntries(['openTime','closeTime','pickupStartTime','pickupEndTime'].map(id => [id, $('#'+id).value]));
+        populateTimeChoices(interval, selectedValues);
+        const day = $('#settingDate').value || today, settings = getDaySettings(day);
         const slots = buildPickupSlots(day, $('#pickupStartTime').value, $('#pickupEndTime').value, interval, (readOnlyData?.settings || data.businessSettings || {}).disabledSlots || [], settings.closed);
         renderPickupSlotList(day, { ...settings, pickupIntervalMinutes: interval, slots }, readOnlyData && !readOnlyData.loading ? 'Settings' : '目前輸入值');
-      }));
+      };
+      ['pickupStartTime','pickupEndTime'].forEach(id => $('#'+id).addEventListener('change', updatePickupPreview));
+      $('#pickupIntervalMinutes').addEventListener('change', updatePickupPreview);
       $('#applyTestClock').addEventListener('click', () => {
         try {
           testClockOverride = parseTestClock($('#testClockInput').value);
