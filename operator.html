@@ -386,7 +386,7 @@
       const updateClock = () => { $('#currentTime').textContent = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()); };
       updateClock(); setInterval(updateClock, 15000);
       if ('serviceWorker' in navigator && location.protocol === 'https:') {
-        navigator.serviceWorker.register('./operator-sw_261026_v32.js', { scope: './' }).catch(error => console.warn('[Operator] 離線頁面快取註冊失敗：', error));
+        navigator.serviceWorker.register('./operator-sw.js', { scope: './' }).catch(error => console.warn('[Operator] 離線頁面快取註冊失敗：', error));
       }
 
       const sample = {
