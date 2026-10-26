@@ -132,13 +132,13 @@
     .count-row { display: grid; grid-template-columns: minmax(0,1fr) auto 104px; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding: 10px 0; }
     .count-current { color: var(--muted); font-size: 13px; white-space: nowrap; }
     .count-input { width: 104px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; text-align: center; background: var(--surface); }
-    .inventory-scroll { width: 100%; overflow-x: auto; }
-    .inventory-grid { display: grid; align-items: center; gap: 8px; min-width: 510px; }
-    .opening-inventory-grid { grid-template-columns: minmax(125px,1.5fr) repeat(3, minmax(78px,1fr)); }
-    .settlement-inventory-grid { grid-template-columns: minmax(120px,1.4fr) repeat(4, minmax(76px,1fr)); min-width: 590px; }
-    .inventory-heading { padding: 8px 4px; color: var(--brand); font-size: 13px; font-weight: 750; text-align: center; }
-    .inventory-product { padding: 9px 4px; border-top: 1px solid var(--line); font-size: 13px; font-weight: 650; }
-    .inventory-value { width: 100%; min-width: 68px; min-height: 42px; padding: 6px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--surface-soft); text-align: center; }
+    .inventory-scroll { width: 100%; min-width: 0; overflow-x: hidden; }
+    .inventory-grid { display: grid; align-items: center; gap: 8px; min-width: 0; width: 100%; }
+    .opening-inventory-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    .settlement-inventory-grid { grid-template-columns: repeat(5, minmax(0,1fr)); }
+    .inventory-heading { min-width: 0; padding: 8px 2px; color: var(--brand); font-size: 13px; font-weight: 750; text-align: center; overflow-wrap: anywhere; }
+    .inventory-product { min-width: 0; padding: 9px 2px; border-top: 1px solid var(--line); font-size: clamp(15px, 4vw, 18px); line-height: 1.25; font-weight: 700; overflow-wrap: anywhere; }
+    .inventory-value { width: 100%; min-width: 0; min-height: 42px; padding: 6px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--surface-soft); text-align: center; }
     .inventory-readonly { color: var(--muted); font-size: 13px; text-align: center; }
     .stock-name { font-weight: 650; }
     .stock-sub { margin-top: 2px; color: var(--muted); font-size: 13px; }
