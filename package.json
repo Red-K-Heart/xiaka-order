@@ -1,0 +1,19 @@
+{
+  "name": "xiaka-order",
+  "version": "0.0.0",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "serve": "python3 -m http.server 8000 --bind 127.0.0.1",
+    "check": "node scripts/check.mjs",
+    "test:unit": "node --test tests/*.test.mjs",
+    "test:browser": "playwright test",
+    "test": "npm run check && npm run test:unit && npm run test:browser",
+    "gas:pull": "node scripts/gas-pull.mjs",
+    "gas:import": "node scripts/gas-import.mjs"
+  },
+  "devDependencies": {
+    "@google/clasp": "3.4.1",
+    "@playwright/test": "1.64.1"
+  }
+}

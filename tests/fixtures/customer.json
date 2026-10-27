@@ -1,0 +1,16 @@
+{
+  "storeSettings": {
+    "acceptingOrders": true,
+    "pickupStartTime": "16:00",
+    "pickupEndTime": "17:30",
+    "pickupIntervalMinutes": 30,
+    "disabledSlots": []
+  },
+  "catalogRules": [
+    { "Prefix": "TEST", "Category_Name": "測試分類" }
+  ],
+  "products": [
+    { "Product_ID": "TEST001", "Online_Name": "測試豆干", "Price": 30 },
+    { "Product_ID": "TEST002", "Online_Name": "測試米血", "Price": 35 }
+  ]
+}
