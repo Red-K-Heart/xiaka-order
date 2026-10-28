@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>呷喀煙燻滷味-輔大店 - 訂單收據</title>
+  <style>
+    /* 專為 80mm 熱敏紙印表機設計的版面 */
+    @page {
+      size: 80mm auto;
+      margin: 0;
+    }
+    body {
+      font-family: "Courier New", Courier, "PingFang TC", "Microsoft JhengHei", monospace, sans-serif;
+      width: 72mm;
+      margin: 0 auto;
+      padding: 5mm 0;
+      color: #000;
+      background: #fff;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .font-bold { font-weight: bold; }
+    
+    .header-title {
+      font-size: 20px;
+      font-weight: 900;
+      margin-bottom: 4px;
+    }
+    
+    .divider {
+      border-top: 1px dashed #000;
+      margin: 6px 0;
+    }
+
+    /* 💡 需求 1：調味資訊三合一單行，大字加粗 */
+    .seasoning-row {
+      font-size: 1.15rem;
+      font-weight: 900;
+      padding: 4px 0;
+      letter-spacing: 0.5px;
+    }
+
+    .info-group {
+      margin: 4px 0;
+    }
+
+    /* 商品明細表格 */
+    .item-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 4px;
+    }
+    .item-table th {
+      border-bottom: 1px solid #000;
+      padding-bottom: 4px;
+      font-size: 13px;
+    }
+    .item-table td {
+      padding: 4px 0;
+      vertical-align: top;
+    }
+    
+    .total-section {
+      font-size: 15px;
+      margin-top: 6px;
+    }
+    .grand-total {
+      font-size: 18px;
+      font-weight: 900;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 標題資訊 -->
+  <div class="text-center">
+    <div class="header-title">呷喀煙燻滷味-輔大店</div>
+    <div class="font-bold" style="font-size: 16px;">【 訂 單 收 據 】</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 訂單與取餐時間 -->
+  <div class="info-group">
+    <div><b>訂單編號：</b><?= order.Order_ID || '' ?></div>
+    <div><b>取餐時間：</b><span style="font-size: 16px; font-weight: 900;"><?= order.Pickup_Time_Slot || '' ?></span></div>
+    
+    <!-- 💡 需求 2：顧客姓名與電話放在同一行 -->
+    <div style="margin-top: 2px;">
+      <b>顧客：</b><?= order.Customer_Name || '' ?> / <?= order.Customer_Phone || '' ?>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 💡 需求 1：胡椒、辣椒粉、辣椒醬資訊列在同一行，且字體加大加粗 -->
+  <div class="seasoning-row">
+    胡椒:<?= order.Overall_Pepper || '正常' ?> / 辣粉:<?= order.Overall_Chili_Powder || '不加' ?> / 辣醬:<?= order.Overall_Chili_Sauce || '不加' ?>
+  </div>
+
+  <div class="info-group">
+    <div><b>蔬菜分裝：</b><?= order.Veg_Separate || '否' ?></div>
+    <? if (order.Remarks) { ?>
+      <div><b>備註：</b><?= order.Remarks ?></div>
+    <? } ?>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 明細清單 -->
+  <table class="item-table">
+    <thead>
+      <tr>
+        <th style="text-align: left; width: 50%;">品項</th>
+        <th style="text-align: center; width: 20%;">數量</th>
+        <th style="text-align: right; width: 30%;">小計</th>
+      </tr>
+    </thead>
+    <tbody>
+      <? if (items && items.length > 0) { ?>
+        <? items.forEach(function(item) { ?>
+          <tr>
+            <td class="font-bold" style="word-break: break-all;"><?= item.Item_Name ?></td>
+            <td class="text-center font-bold">x<?= item.Quantity ?></td>
+            <td class="text-right font-bold">$<?= item.Subtotal ?></td>
+          </tr>
+        <? }); ?>
+      <? } else { ?>
+        <tr>
+          <td colspan="3" class="text-center">（無明細資料）</td>
+        </tr>
+      <? } ?>
+    </tbody>
+  </table>
+
+  <div class="divider"></div>
+
+  <!-- 金額計算 -->
+  <div class="total-section">
+    <div style="display: flex; justify-content: space-between;">
+      <span>小計：</span>
+      <span>$<?= order.Total_Amount || 0 ?></span>
+    </div>
+    <div style="display: flex; justify-content: space-between;">
+      <span>折扣：</span>
+      <span>-$<?= order.Discount_Amount || 0 ?></span>
+    </div>
+    <div class="grand-total" style="display: flex; justify-content: space-between; margin-top: 2px;">
+      <span>總計金額：</span>
+      <span>$<?= (order.Total_Amount || 0) - (order.Discount_Amount || 0) ?></span>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 底部時間與警語 -->
+  <div class="text-center" style="font-size: 11px; margin-top: 6px;">
+    <div>下單時間：<?= order.Order_Time || order.Timestamp || '' ?></div>
+    <div style="margin-top: 4px;">謝謝惠顧，請保留此單據取餐！</div>
+  </div>
+
+</body>
+</html>

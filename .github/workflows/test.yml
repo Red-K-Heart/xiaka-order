@@ -25,3 +25,5 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npx --no-install playwright install --with-deps chromium
       - run: npm test
+      - name: Check GAS global function collisions before deployment
+        run: npm run gas:inspect

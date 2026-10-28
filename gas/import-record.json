@@ -1,0 +1,14 @@
+{
+  "scriptId": "1FfzwD63lbb4QV5MqyKxV8cg0MYxqW90Hz4_z90Rmc5P1WuxdLHFr58CP",
+  "method": "clasp-clone",
+  "sourceIdentity": "requested Apps Script ID",
+  "sha256": {
+    "appsscript.json": "729a4c61bc65411f221c76ce80d368e477374cd3670f8f95cad5e9fc990ec5f0",
+    "Code.js": "4b4131537d32f29584d31099739410518d2d5cb6a2221740bf2bffac5762748b",
+    "index.html": "5e5313e9721bfb8a04e8f2bb22039f170e6223cca10ab2dfb4e04c7f4e316291",
+    "operator.html": "ea3db7764ffbde175154d4317e68fa414dc71f3fcd8a73c8f4a718284e5185e0",
+    "PrintReceipt.html": "9dbeddcd26e2101e01a638e840ec74cb989dffcef3900d64f7dde1dc43c458b8",
+    "ReceiptService.js": "4107c9bf459721f596937e51029b6f64807a7743a60a58753af04b6a1464e1cb",
+    "saveOrderToDatabase.js": "bafb0270e7cb35ebc9aac687c5569b5135d4f2a3c6346ed289447082bd01e2e8"
+  }
+}

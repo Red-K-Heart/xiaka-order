@@ -10,7 +10,8 @@
     "test:browser": "playwright test",
     "test": "npm run check && npm run test:unit && npm run test:browser",
     "gas:pull": "node scripts/gas-pull.mjs",
-    "gas:import": "node scripts/gas-import.mjs"
+    "gas:import": "node scripts/gas-import.mjs",
+    "gas:inspect": "node scripts/gas-inspect.mjs"
   },
   "devDependencies": {
     "@google/clasp": "3.4.1",
