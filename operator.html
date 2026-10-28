@@ -594,7 +594,9 @@
       }
       function requestOperatorWrite(action, order, changes) {
         const state = makeAuthState();
-        return requestOperatorResponse('operatorWrite', { action, credential: operatorCredential, state, orderId: order.id, revision: order.revision || 0, changes: changes || {} }).then(message => {
+        const payload = { action, credential: operatorCredential, state, changes: changes || {} };
+        if (order) { payload.orderId = order.id; payload.revision = order.revision || 0; }
+        return requestOperatorResponse('operatorWrite', payload).then(message => {
           if (message?.type !== 'XIAKA_OPERATOR_WRITE' || message.state !== state) throw new Error('GAS 寫入回覆格式錯誤');
           if (!message.result?.success) throw new Error(message.result?.message || 'GAS 拒絕更新訂單');
           return message.result;
@@ -627,7 +629,7 @@
           data.cachedProducts = Array.isArray(response.data.products) ? response.data.products : [];
           data.cachedBusinessCalendar = Array.isArray(response.data.businessCalendar) ? response.data.businessCalendar : [];
           data.settlements = { ...(response.data.settlements || {}), ...Object.fromEntries(Object.entries(localSettlements).filter(([, item]) => item?.pendingLocal)) };
-          data.openings = { ...localOpenings };
+          data.openings = { ...(response.data.openings || {}), ...Object.fromEntries(Object.entries(localOpenings).filter(([, item]) => item?.pendingLocal)) };
           persistRemoteSnapshot(response.data);
           saveLocal();
           offlineMode = false;
@@ -699,10 +701,10 @@
       function renderCalculator() {
         $('#calculatorExpression').textContent = calculatorExpression;
         $('#calculatorValue').textContent = formatCalculatorNumber(calculatorValue);
-        $('#saveOnsiteOrder').disabled = !!readOnlyData || Number(calculatorValue) <= 0;
-        $('#calculatorSaveNote').textContent = readOnlyData
-          ? '目前連線模式尚未提供現場訂單寫入 GAS 的功能。'
-          : '儲存後會加入本機示意訂單，並列在「已完成／全部」；不會寫入試算表。';
+        $('#saveOnsiteOrder').disabled = !signedInOperator || Number(calculatorValue) <= 0;
+        $('#calculatorSaveNote').textContent = signedInOperator
+          ? '儲存後會寫入正式試算表，並列在「已完成／全部」。'
+          : '請先登入作業帳號，現場訂單才能寫入試算表。';
       }
       function calculatePendingValue(rightValue) {
         if (calculatorOperand === null || !calculatorOperator) return Number(calculatorValue) || 0;
@@ -743,8 +745,8 @@
         }
         renderCalculator();
       }
-      function saveOnsiteOrder() {
-        if (readOnlyData) return showToast('目前連線模式尚未開放現場訂單寫入');
+      async function saveOnsiteOrder() {
+        if (!signedInOperator || !operatorCredential) return showToast('請先登入作業帳號');
         const amount = Math.round((Number(calculatorValue) || 0) * 100) / 100;
         if (amount <= 0) return showToast('請先計算大於 0 的訂單金額');
         const now = new Date();
@@ -756,9 +758,18 @@
           name: '現場交易', phone: '', amount, payment: '現金', status: 'completed',
           items: [`現場計算金額 ${money(amount)}`], remarks: calculatorExpression, extraDetails: [], onsite: true, pendingLocal: !!offlineMode
         };
-        data.orders.unshift(order); saveLocal();
+        if (offlineMode || !navigator.onLine) {
+          data.orders.unshift(order); saveLocal();
+          renderOrders(); showToast('離線現場訂單已暫存，尚未同步；請連線後重新確認並補登');
+          return;
+        }
+        try {
+          await requestOperatorWrite('createOnsiteOrder', null, { amount, remarks: calculatorExpression });
+          await loadOperatorSnapshot();
+          showToast('現場訂單已寫入試算表');
+        } catch (error) { showToast(error.message); return; }
         calculatorValue = '0'; calculatorOperand = null; calculatorOperator = null; calculatorReplace = false; calculatorExpression = '';
-        renderOrders(); showToast('現場示意訂單已儲存在本機');
+        renderOrders();
       }
       function renderOrders() {
         const calculatorMode = activeFilter === 'calculator';
@@ -796,7 +807,7 @@
       async function setOrderStatus(id, status) {
         const order = data.orders.find(item => item.id === id); if (!order) return;
         if (status === 'cancelled' && !confirm('確認將此訂單狀態改為「已取消」？')) return;
-        if (offlineMode) { order.status = status; order.pendingLocal = true; order.localUpdatedAt = new Date().toISOString(); saveLocal(); renderOrders(); showToast('離線變更已暫存，尚未同步至試算表'); return; }
+        if (offlineMode || !readOnlyData) { order.status = status; order.pendingLocal = !!offlineMode; order.localUpdatedAt = new Date().toISOString(); saveLocal(); renderOrders(); showToast(offlineMode ? '離線變更已暫存，尚未同步至試算表' : '示意訂單狀態已保存在本機'); return; }
         try { await requestOperatorWrite('updateOrderStatus', order, { status }); showToast(`訂單已更新為「${statusLabel[status]}」`); await loadOperatorSnapshot(); }
         catch (error) { showToast(error.message); }
       }
@@ -830,6 +841,7 @@
             pickupIntervalMinutes: interval,
             note: calendarDay.note || source.note || '',
             slots,
+            disabledSlots: data.pendingDisabledSlots || source.disabledSlots || [],
             stock: readOnlyData.products || []
           };
         }
@@ -881,7 +893,7 @@
       }
       function renderPickupSlotList(day, settings, sourceLabel) {
         $('#pickupIntervalInfo').textContent = `依 ${sourceLabel} 間隔產生（${settings.pickupIntervalMinutes || 30} 分鐘）`;
-        $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${readOnlyData || !canManageSchedule() || !settingsEditMode || settings.closed ? 'disabled' : ''}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('') || `<div class="empty">${settings.closed ? '本日休息，未開放取餐時段。' : '請確認可取餐起訖時間與時段間隔。'}</div>`;
+        $('#slotList').innerHTML = settings.slots.map((slot,index) => `<div class="slot-row"><span>${escapeHtml(slot.time)}</span><button class="btn ${slot.enabled ? 'primary' : ''}" data-slot="${index}" type="button" ${!canManageSchedule() || !settingsEditMode || settings.closed ? 'disabled' : ''}>${slot.enabled ? '開放中' : '已停用'}</button></div>`).join('') || `<div class="empty">${settings.closed ? '本日休息，未開放取餐時段。' : '請確認可取餐起訖時間與時段間隔。'}</div>`;
       }
       function updateBusinessDaysSummary() {
         const names = { MON:'週一', TUE:'週二', WED:'週三', THU:'週四', FRI:'週五', SAT:'週六', SUN:'週日' };
@@ -1039,8 +1051,8 @@
         $('#selectedDateSchedule').textContent = `${getBusinessTestStatus(day)}\n${specialStatus}；${weekdayNames[weekdayCode]}${businessDays.includes(weekdayCode) ? '為每週營業日' : '為每週公休日'}。\n訂餐時間：${settings.openTime || '未設定'}–${settings.closeTime || '未設定'}。\n可取餐時間：${settings.pickupStartTime || '未設定'}–${settings.pickupEndTime || '未設定'}；每 ${settings.pickupIntervalMinutes || 30} 分鐘一格。\n${note}`;
         $('#closedToggle').disabled = true; $('#specialNote').disabled = true;
         renderPickupSlotList(day, settings, readOnlyData && !readOnlyData.loading ? 'Settings' : '示意設定');
-        $('#stockList').innerHTML = settings.stock.map((item,index) => `<div class="stock-row"><div><div class="stock-name">${escapeHtml(item.name)}</div><div class="stock-sub">${item.quantity === 0 ? '庫存售完' : '可售數量'}</div></div><input class="qty-input" type="number" min="0" step="1" value="${Number(item.quantity) || 0}" data-qty="${index}" aria-label="${escapeHtml(item.name)}可售數量" ${readOnlyData || !canEdit || !settingsEditMode ? 'disabled' : ''}><label class="switch-label"><input type="checkbox" data-hidden="${index}" ${item.manualHidden ? 'checked' : ''} ${readOnlyData || !canEdit || !settingsEditMode ? 'disabled' : ''}>手動下架</label></div>`).join('');
-        $('#stockReason').disabled = !!readOnlyData || !canEdit || !settingsEditMode;
+        $('#stockList').innerHTML = settings.stock.map((item,index) => `<div class="stock-row"><div><div class="stock-name">${escapeHtml(item.name)}</div><div class="stock-sub">${item.quantity === 0 ? '庫存售完' : '可售數量'}</div></div><input class="qty-input" type="number" min="0" step="1" value="${Number(item.quantity) || 0}" data-qty="${index}" aria-label="${escapeHtml(item.name)}可售數量" ${!canEdit || !settingsEditMode ? 'disabled' : ''}><label class="switch-label"><input type="checkbox" data-hidden="${index}" ${item.manualHidden ? 'checked' : ''} ${!canEdit || !settingsEditMode ? 'disabled' : ''}>手動下架</label></div>`).join('');
+        $('#stockReason').disabled = !canEdit || !settingsEditMode;
         $('#editSettings').hidden = settingsEditMode;
         $('#editSettings').disabled = !canEdit;
         $('#cancelSettingsEdit').hidden = !settingsEditMode;
@@ -1051,7 +1063,7 @@
       function renderOpening() {
         const day = $('#openingDate').value || today;
         const record = data.openings[day];
-        const locked = (!!readOnlyData && !offlineMode) || !canClose() || record?.status === 'completed';
+        const locked = !canClose() || record?.status === 'completed';
         $('#openingBadge').textContent = record ? ({ draft:'草稿', completed:'已完成開店' }[record.status] || '草稿') : '尚未建立';
         $('#openingBadge').className = `badge ${record?.status === 'completed' ? 'completed' : 'pending'}`;
         $('#openingFloat').value = record?.floatAmount ?? '';
@@ -1071,7 +1083,7 @@
         $('#completeOpening').disabled = locked;
         $('#openingMeta').textContent = record
           ? `最後儲存：${record.updatedAt ? new Date(record.updatedAt).toLocaleString('zh-TW') : '—'} ・操作人：${record.actor || '—'}${record.pendingLocal ? ' ・離線待同步' : ''}`
-          : readOnlyData ? '連線模式尚未提供開店資料寫入功能。' : '開店資料只儲存在此瀏覽器；完成後不可修改。';
+          : readOnlyData ? '儲存草稿或完成開店後，資料會寫入正式試算表。' : '開店資料只儲存在此瀏覽器；完成後不可修改。';
       }
       function collectOpeningInventory() {
         const inventory = {};
@@ -1131,11 +1143,20 @@
         saveLocal(); settlementDirty = false;
       }
       function saveOpening(status) {
-        if (readOnlyData && !offlineMode) return showToast('目前連線模式尚未開放開店資料寫入');
         if (!canClose()) return showToast('只有系統管理員或店長可以完成開店作業');
         const day = $('#openingDate').value;
         const old = data.openings[day] || {};
         const inventory = collectOpeningInventory();
+        const changes = { date: day, status, revision: Number(old.revision) || 0, floatAmount: Number($('#openingFloat').value) || 0, inventory, weather: $('#openingWeather').value, note: $('#openingNote').value.trim() };
+        if (readOnlyData && !offlineMode) {
+          if (!signedInOperator || !operatorCredential) return showToast('請先登入作業帳號');
+          $('#saveOpeningDraft').disabled = true; $('#completeOpening').disabled = true;
+          requestOperatorWrite('saveOpening', null, changes).then(async () => {
+            await loadOperatorSnapshot();
+            showToast(status === 'completed' ? '開店作業已寫入試算表' : '開店草稿已寫入試算表');
+          }).catch(error => showToast(error.message)).finally(renderOpening);
+          return;
+        }
         data.openings[day] = {
           ...old, date: day, status, floatAmount: Number($('#openingFloat').value) || 0,
           inventory, weather: $('#openingWeather').value, note: $('#openingNote').value.trim(),
@@ -1149,7 +1170,7 @@
         $('#expenseAmount').value = String(settlementExpenseBaseAmount + itemTotal);
       }
       function renderExpenseLedger(record) {
-        const locked = (!!readOnlyData && !offlineMode) || record?.status === 'closed';
+        const locked = !canClose() || record?.status === 'closed';
         const legacyNotice = settlementExpenseBaseAmount > 0
           ? `<div class="status-note">既有未分項支出 ${money(settlementExpenseBaseAmount)} 已納入支出合計。</div>`
           : '';
@@ -1171,9 +1192,9 @@
         const record = data.settlements[day];
         $('#settlementBadge').textContent = record ? ({ draft: '草稿', closed: '已結算', reopened: '已重開' }[record.status] || '草稿') : '尚未建立';
         $('#settlementBadge').className = 'badge ' + (record?.status === 'closed' ? 'completed' : 'pending');
-        $('#reopenSettlement').hidden = (!!readOnlyData && !offlineMode) || !(record?.status === 'closed' && canClose());
-        $('#closeSettlement').disabled = (!!readOnlyData && !offlineMode) || !canClose() || record?.status === 'closed';
-        $('#saveDraft').disabled = (!!readOnlyData && !offlineMode) || record?.status === 'closed';
+        $('#reopenSettlement').hidden = !(record?.status === 'closed' && canClose());
+        $('#closeSettlement').disabled = !canClose() || record?.status === 'closed';
+        $('#saveDraft').disabled = !canClose() || record?.status === 'closed';
         $('#settlementMeta').textContent = record ? `最後儲存：${record.updatedAt ? new Date(record.updatedAt).toLocaleString('zh-TW') : '—'} ・操作人：${record.actor || '—'}${record.pendingLocal ? ' ・離線待同步' : ''}` : (readOnlyData ? '此日期尚無結算資料。' : '建立人員與時間會在示意資料中記錄。');
         const settings = getDaySettings(day);
         const inventoryCounts = record?.inventoryCounts || {};
@@ -1181,8 +1202,12 @@
         $('#settlementInventoryList').innerHTML = settings.stock.length
           ? `<div class="inventory-scroll"><div class="inventory-grid settlement-inventory-grid"><div class="inventory-heading">品名</div><div class="inventory-heading">賣出數量</div><div class="inventory-heading">報廢數量</div><div class="inventory-heading">保留數量</div><div class="inventory-heading">下單備貨</div>${settings.stock.map(item => {
             const row = inventory[item.id] || {};
-            const disabled = (readOnlyData && !offlineMode) || record?.status === 'closed' ? 'disabled' : '';
-            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(item.name)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-sold value="${row.sold ?? ''}" aria-label="${escapeHtml(item.name)}賣出數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-waste value="${row.waste ?? ''}" aria-label="${escapeHtml(item.name)}報廢數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? inventoryCounts[item.id] ?? (Number(item.quantity) || 0)}" data-settlement-reserved aria-label="${escapeHtml(item.name)}保留數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-order value="${row.orderPrep ?? ''}" aria-label="${escapeHtml(item.name)}下單備貨" ${disabled}></div>`;
+            const autoCounts = readOnlyData?.inventoryByDate?.[day]?.[item.id] || {};
+            const soldQty = autoCounts.sold ?? row.sold ?? 0;
+            const wasteQty = autoCounts.waste ?? row.waste ?? 0;
+            const disabled = !canClose() || record?.status === 'closed' ? 'disabled' : '';
+            const formulaDisabled = (!!readOnlyData && !offlineMode) || disabled;
+            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(item.name)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-sold value="${soldQty}" aria-label="${escapeHtml(item.name)}賣出數量" ${formulaDisabled ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-waste value="${wasteQty}" aria-label="${escapeHtml(item.name)}報廢數量" ${formulaDisabled ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? inventoryCounts[item.id] ?? (Number(item.quantity) || 0)}" data-settlement-reserved aria-label="${escapeHtml(item.name)}保留數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-order value="${row.orderPrep ?? ''}" aria-label="${escapeHtml(item.name)}下單備貨" ${disabled}></div>`;
           }).join('')}</div></div>`
           : '<div class="empty">此日期沒有商品資料</div>';
         if (record) {
@@ -1196,13 +1221,22 @@
           ? Number(record.expenseBaseAmount) || 0
           : Array.isArray(record?.expenses) ? 0 : Number(record?.expenseAmount) || 0;
         renderExpenseLedger(record);
-        ['cashSales','wasteAmount','settlementNote'].forEach(id => { $('#'+id).disabled = (readOnlyData && !offlineMode) || record?.status === 'closed'; });
+        ['cashSales','wasteAmount','settlementNote'].forEach(id => { $('#'+id).disabled = !canClose() || record?.status === 'closed'; });
       }
       function saveSettlement(status) {
-        if (readOnlyData && !offlineMode) return showToast('目前為唯讀連線，尚未開放結算寫入');
         const day = $('#settlementDate').value;
         const old = data.settlements[day] || {};
         const { inventoryCounts, inventory, expenses, expenseAmount } = collectSettlementValues();
+        const changes = { date: day, status, revision: Number(old.revision) || 0, cashSales: Number($('#cashSales').value) || 0, expenseAmount, expenseBaseAmount: settlementExpenseBaseAmount, expenses, wasteAmount: Number($('#wasteAmount').value) || 0, inventoryCounts, inventory, note: $('#settlementNote').value.trim() };
+        if (readOnlyData && !offlineMode) {
+          if (!signedInOperator || !operatorCredential) return showToast('請先登入作業帳號');
+          $('#saveDraft').disabled = true; $('#closeSettlement').disabled = true;
+          requestOperatorWrite('saveSettlement', null, changes).then(async () => {
+            await loadOperatorSnapshot();
+            showToast(status === 'closed' ? '結算已寫入試算表' : '結算草稿已寫入試算表');
+          }).catch(error => showToast(error.message)).finally(renderSettlement);
+          return;
+        }
         data.settlements[day] = { ...old, date: day, status, cashSales: Number($('#cashSales').value) || 0, expenseAmount, expenseBaseAmount: settlementExpenseBaseAmount, expenses, wasteAmount: Number($('#wasteAmount').value) || 0, inventoryCounts, inventory, note: $('#settlementNote').value.trim(), actor: role(), updatedAt: new Date().toISOString(), pendingLocal: !!offlineMode };
         saveLocal(); renderSettlement(); showToast(status === 'closed' ? '示意結算已完成' : '示意結算草稿已儲存');
       }
@@ -1264,7 +1298,7 @@
         event.preventDefault(); const order = data.orders.find(item => item.id === $('#editOrderId').value); if (!order) return;
         if (!confirm('確認修改訂單資料與金額？')) return;
         const changes = { pickupDate: $('#editPickupDate').value, pickupTime: $('#editPickupTime').value.trim(), name: $('#editName').value.trim(), phone: $('#editPhone').value.trim(), amount: Number($('#editAmount').value) || 0, remarks: $('#editRemarks').value.trim() };
-        if (offlineMode) { Object.assign(order, changes, { pendingLocal: true, localUpdatedAt: new Date().toISOString() }); saveLocal(); $('#editDialog').close(); renderOrders(); showToast('離線修改已暫存，尚未同步至試算表'); return; }
+        if (offlineMode || !readOnlyData) { Object.assign(order, changes, { pendingLocal: !!offlineMode, localUpdatedAt: new Date().toISOString() }); saveLocal(); $('#editDialog').close(); renderOrders(); showToast(offlineMode ? '離線修改已暫存，尚未同步至試算表' : '示意訂單已在本機修改'); return; }
         try { await requestOperatorWrite('updateOrderDetails', order, changes); $('#editDialog').close(); showToast('訂單資料已更新'); await loadOperatorSnapshot(); }
         catch (error) { showToast(error.message); }
       });
@@ -1307,12 +1341,13 @@
         renderSettings(); showToast('已還原目前台灣時間');
       });
       $('#slotList').addEventListener('click', event => {
-        const button = event.target.closest('[data-slot]'); if (!button || readOnlyData || !canManageSchedule()) return;
+        const button = event.target.closest('[data-slot]'); if (!button || !canManageSchedule()) return;
         const settings = getDaySettings($('#settingDate').value || today), slot = settings.slots[Number(button.dataset.slot)];
         const disabledRange = String(slot.time || '').replace('–','-');
         settings.disabledSlots = settings.disabledSlots || [];
         if (slot.enabled) settings.disabledSlots.push(disabledRange);
         else settings.disabledSlots = settings.disabledSlots.filter(range => String(range).replace(/\s/g,'') !== disabledRange.replace(/\s/g,''));
+        data.pendingDisabledSlots = settings.disabledSlots;
         renderSettings(); saveLocal();
       });
       $('#editSettings').addEventListener('click', () => {
@@ -1333,19 +1368,25 @@
         if (![openTime, closeTime, pickupStartTime, pickupEndTime].every(value => clockPattern.test(value))) return showToast('時間請使用 24 小時制 HH:mm，例如 16:00');
         if (pickupEndTime <= pickupStartTime) return showToast('可取餐結束時間必須晚於開始時間');
         if (!Number.isInteger(pickupIntervalMinutes) || pickupIntervalMinutes < 1 || pickupIntervalMinutes > 720) return showToast('取餐時段間隔需為 1 至 720 的整數分鐘');
-        const changes = { openTime, closeTime, pickupStartTime, pickupEndTime, pickupIntervalMinutes, businessDays };
+        const stockSettings = getDaySettings($('#settingDate').value || today).stock;
+        const currentDaySettings = getDaySettings($('#settingDate').value || today);
+        const changes = { openTime, closeTime, pickupStartTime, pickupEndTime, pickupIntervalMinutes, businessDays,
+          disabledSlots: currentDaySettings.disabledSlots || [], stockReason: $('#stockReason').value.trim(),
+          stock: $$('[data-qty]').map(input => { const item = stockSettings[Number(input.dataset.qty)]; return { id: item.id, quantity: Math.max(0, Number(input.value) || 0), manualHidden: !!$(`[data-hidden="${input.dataset.qty}"]`)?.checked, expectedQuantity: Number(item.stockQty ?? item.quantity) || 0, expectedReservedQty: Number(item.reservedQty) || 0 }; }) };
         if (readOnlyData) {
-          if (!signedInOperator || !confirm('確認更新試算表中的營業時間、取餐時段及每週營業日？')) return;
+          if (!signedInOperator || !confirm('確認更新試算表中的營業時間、取餐時段、每週營業日及商品庫存？')) return;
           changes.expected = {
             openTime: readOnlyData.settings.openTime || '', closeTime: readOnlyData.settings.closeTime || '',
             pickupStartTime: readOnlyData.settings.pickupStartTime || '', pickupEndTime: readOnlyData.settings.pickupEndTime || '',
             pickupIntervalMinutes: readOnlyData.settings.pickupIntervalMinutes || 30,
-            businessDays: readOnlyData.settings.businessDays || []
+            businessDays: readOnlyData.settings.businessDays || [],
+            disabledSlots: (readOnlyData.settings.disabledSlots || []).join(',')
           };
           $('#saveSettings').disabled = true;
           try {
             await requestBusinessSettingsWrite(changes);
             data.pendingBusinessSettings = false;
+            data.pendingDisabledSlots = null;
             settingsEditMode = false;
             await loadOperatorSnapshot();
             showToast('營業規則已更新並記錄異動');
@@ -1416,9 +1457,15 @@
         scheduleDraftSave('settlement');
       });
       $('#closeSettlement').addEventListener('click', () => { if (canClose() && confirm('確認完成這一天的結算？')) saveSettlement('closed'); });
-      $('#reopenSettlement').addEventListener('click', () => {
-        if ((readOnlyData && !offlineMode) || !canClose() || !confirm('確認重開已完成的結算？')) return;
-        const record = data.settlements[$('#settlementDate').value]; if (record) { record.status = 'reopened'; record.actor = role(); record.updatedAt = new Date().toISOString(); saveLocal(); renderSettlement(); showToast('示意結算已重開'); }
+      $('#reopenSettlement').addEventListener('click', async () => {
+        if (!canClose() || !confirm('確認重開已完成的結算？')) return;
+        const day = $('#settlementDate').value, record = data.settlements[day];
+        if (record && readOnlyData && !offlineMode) {
+          try { await requestOperatorWrite('reopenSettlement', null, { date: day, revision: Number(record.revision) || 0 }); await loadOperatorSnapshot(); showToast('結算已重開'); }
+          catch (error) { showToast(error.message); }
+          return;
+        }
+        if (record) { record.status = 'reopened'; record.actor = role(); record.updatedAt = new Date().toISOString(); saveLocal(); renderSettlement(); showToast('示意結算已重開'); }
       });
       roleSelect.addEventListener('change', () => { renderOpening(); renderSettings(); renderSettlement(); showToast(`展示角色已切換為「${role()}」`); });
       if (!navigator.onLine && offlineSnapshotCache?.snapshot) activateOfflineCache();
@@ -1427,3 +1474,4 @@
   </script>
 </body>
 </html>
+
