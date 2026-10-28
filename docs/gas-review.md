@@ -2,6 +2,8 @@
 
 檢查日期：2026-10-28（Asia/Taipei）。來源為使用者在自己的電腦以 clasp 下載後上傳的 `gas.rar`。
 
+**這是提交 `3cbd212` 的歷史檢查紀錄。** 後續已整併重複函式，現行結果請看 [gas-consolidation.md](gas-consolidation.md)。下述原始檔案數、雜湊相符狀態與檢查失敗均描述當時的原始快照，並非目前工作版本。
+
 ## 匯入與秘密檢查
 
 - 7 個檔案已原樣保存於 `gas/src/`；`gas/import-record.json` 也保留原始上傳內容。單元測試逐一驗證 SHA-256 與檔案清單。

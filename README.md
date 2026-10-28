@@ -38,12 +38,12 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm test
 npm run gas:inspect
 ```
 
-**目前這個檢查會失敗**：原始 GAS 快照有 31 個重複的全域函式名稱，其中 12 個內容不同。這是已確認的原始碼問題，尚未整併；功能測試通過不代表可以部署。詳見 [GAS 檢查結果](docs/gas-review.md)。
+原始 GAS 的 31 個重複全域函式已整併至 `gas/src/Code.js`，目前衝突檢查通過。原始碼差異、採用的訂單編號與快取協定見 [GAS 整併說明](docs/gas-consolidation.md)。通過本機測試仍不代表 Google 線上整合已驗證。
 
-GitHub Actions 在 PR 與 `main` 更新時執行測試及函式衝突檢查，不含部署步驟；衝突未處理前預期會顯示失敗。
+GitHub Actions 在 PR 與 `main` 更新時執行測試及函式衝突檢查，不含部署步驟。
 
 ## Google 試算表與 GAS
 
 [整合與授權指引](docs/integration.md) 說明如何匯入真正的 GAS 原始碼、取得 Google 授權、建立測試環境及安排發布。
 
-已由使用者提供的 `gas.rar` 匯入 7 個原始檔案至 `gas/src/`，並保留原始 `gas/import-record.json`，所有雜湊相符。尚未存取真實試算表、Script Properties 的值或線上部署；沒有更新正式程式或資料。
+使用者提供的 7 個原始檔案已保存在 Git 提交 `3cbd212`，當時所有雜湊相符。`gas/src/` 現在包含整併後的 6 個檔案；`gas/import-record.json` 保留原始上傳來源紀錄，不是現行程式的雜湊清單。尚未存取真實試算表、Script Properties 的值或線上部署；沒有更新正式程式或資料。

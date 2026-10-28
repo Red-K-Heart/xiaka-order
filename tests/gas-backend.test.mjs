@@ -1,10 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadGas, inventory } from '../scripts/gas-source.mjs';
-import { readFile, readdir } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
 
-const variants = ['Code.js', 'saveOrderToDatabase.js'];
+const variants = ['Code.js'];
 const state = 'a'.repeat(48);
 const headers = ['Staff_ID', 'Google_Subject', 'Google_Email', 'Display_Name', 'Role', 'Status'];
 function authServices({ claims = {}, staff = {}, status = 200 } = {}) {
@@ -51,16 +49,6 @@ function cacheServices() {
   };
   return { CacheService: { getScriptCache: () => cache } };
 }
-
-test('uploaded snapshot matches every original hash and contains exactly the recorded source files', async () => {
-  const record = JSON.parse(await readFile(new URL('../gas/import-record.json', import.meta.url), 'utf8'));
-  const files = await readdir(new URL('../gas/src/', import.meta.url));
-  assert.deepEqual(files.sort(), Object.keys(record.sha256).sort());
-  for (const [name, expected] of Object.entries(record.sha256)) {
-    const bytes = await readFile(new URL(`../gas/src/${name}`, import.meta.url));
-    assert.equal(createHash('sha256').update(bytes).digest('hex'), expected, name);
-  }
-});
 
 for (const file of variants) {
   test(`${file}: authorized staff identity is checked against audience and Staff_Accounts`, async () => {
@@ -115,9 +103,7 @@ for (const file of variants) {
     const gas = await loadGas([file], cacheServices());
     const message = { type: 'TEST', text: '測試🍢'.repeat(8000) };
     gas.operatorStoreResponse_(state, message);
-    const poll = (mode, part) => file === 'Code.js'
-      ? gas.operatorPollResponse_(state, mode, part)
-      : gas.operatorGetCachedResponse_({ state, mode, part });
+    const poll = (mode, part) => gas.operatorGetCachedResponse_({ state, mode, part });
     const meta = poll('meta');
     assert.equal(meta.ready, true);
     assert.ok(meta.chunkCount > 1);
@@ -129,13 +115,13 @@ for (const file of variants) {
 }
 
 test('newer order writer rejects staff editing details before touching a spreadsheet', async () => {
-  const gas = await loadGas(['saveOrderToDatabase.js']);
+  const gas = await loadGas(['Code.js']);
   assert.throws(() => gas.updateOperatorOrder_({ action: 'updateOrderDetails', orderId: 'TEST001' }, { role: '員工' }), /只有系統管理員或店長/);
 });
 
 test('newer order writer rejects stale revision and releases its lock without writes', async () => {
   let releases = 0;
-  const gas = await loadGas(['saveOrderToDatabase.js'], {
+  const gas = await loadGas(['Code.js'], {
     LockService: { getScriptLock: () => ({ waitLock: ms => assert.equal(ms, 20000), releaseLock: () => releases++ }) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: () => ({
       getLastRow: () => 2,
@@ -155,22 +141,19 @@ test('receipt header aliases preserve zero values and normalize whitespace', asy
   assert.equal(gas.getReceiptValue_([], ['Other'], ['Total_Amount'], 999), 999);
 });
 
-test('snapshot diagnostic: global collisions include both entrypoints and incompatible order-code signatures', async () => {
+test('all GAS global function names have exactly one definition', async () => {
   const definitions = await inventory();
-  for (const name of ['doGet', 'doPost', 'handleOperatorWritePost_', 'operatorStoreResponse_']) {
-    assert.equal(definitions.get(name).length, 2, name);
-  }
-  assert.deepEqual(definitions.get('generateCustomerOrderCode_').map(x => x.arguments).sort(), [2, 3]);
+  for (const [name, locations] of definitions) assert.equal(locations.length, 1, name);
 });
 
-test('snapshot diagnostic: cache protocols are incompatible under alternate definition orders', async () => {
-  const codeLast = await loadGas(['saveOrderToDatabase.js', 'Code.js'], cacheServices());
-  codeLast.operatorStoreResponse_(state, { text: 'synthetic response' });
-  assert.equal(codeLast.operatorPollResponse_(state, 'meta').ready, true);
-  assert.equal(codeLast.operatorGetCachedResponse_({ state, mode: 'meta' }).pending, true);
-
-  const saveLast = await loadGas(['Code.js', 'saveOrderToDatabase.js'], cacheServices());
-  saveLast.operatorStoreResponse_(state, { text: 'synthetic response' });
-  assert.equal(saveLast.operatorGetCachedResponse_({ state, mode: 'meta' }).ready, true);
-  assert.equal(saveLast.operatorPollResponse_(state, 'meta').pending, true);
+test('polling is compatible through both interfaces regardless of source load order', async () => {
+  for (const files of [['Code.js', 'ReceiptService.js'], ['ReceiptService.js', 'Code.js']]) {
+    const gas = await loadGas(files, { ...cacheServices(), ...contentServices() });
+    gas.operatorStoreResponse_(state, { text: 'synthetic response' });
+    assert.equal(gas.operatorPollResponse_(state, 'meta').ready, true);
+    assert.equal(gas.operatorGetCachedResponse_({ state, mode: 'meta' }).ready, true);
+    const response = gas.doGet({ parameter: { api: 'operatorPoll', state, mode: 'chunk', part: '0', callback: 'poll' } });
+    const chunk = JSON.parse(response.text.slice('poll('.length, -2));
+    assert.equal(JSON.parse(chunk.value).text, 'synthetic response');
+  }
 });

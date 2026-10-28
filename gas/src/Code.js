@@ -334,6 +334,16 @@ function saveOrderData_(data) {
       ""
     );
 
+    // 依 Settings 與 Business_Calendar 再做一次伺服器端營業日檢查，
+    // 避免前端停用選項被略過後，休息日仍收到新訂單。
+    var orderSchedule = getBusinessScheduleForDate_(pickupDate, now);
+    if (!orderSchedule.acceptingOrders) {
+      throw new Error(orderSchedule.message || "目前不接受新訂單。");
+    }
+    if (!isConfiguredPickupSlot_(pickupTimeSlot, orderSchedule)) {
+      throw new Error("所選取餐時段目前未開放，請重新選擇時段。");
+    }
+
     var overallPepper = getInputValue_(
       data,
       [
@@ -696,7 +706,6 @@ function saveOrderData_(data) {
 
     var customerOrderCode = generateCustomerOrderCode_(
       now,
-      phone,
       todayStr
     );
 
@@ -1143,34 +1152,28 @@ function saveOrderData_(data) {
 
 
 /**
- * 每日循環產生客戶查詢編號：A~E + 台北時間 HHmm + 電話末三碼。
+ * 每日產生客戶查詢編號：台北日期 yyyymmdd + 三位數流水號（001、002...）。
+ * 例如 2026-10-25 的第一筆編號為 20261025001；查詢時另以完整電話號碼核對。
  * saveOrderData_ 會先取得 ScriptLock，確保同時下單時流水號不重複。
  */
-function generateCustomerOrderCode_(now, phone, todayStr) {
-  var phoneDigits = String(phone || "").replace(/\D/g, "");
-  if (phoneDigits.length < 3) {
-    throw new Error("無法建立客戶訂單編號：電話號碼不足三碼。");
-  }
-
+function generateCustomerOrderCode_(now, todayStr) {
+  var datePrefix = Utilities.formatDate(now, "Asia/Taipei", "yyyyMMdd");
   var properties = PropertiesService.getScriptProperties();
   var savedDate = properties.getProperty("CUSTOMER_ORDER_CODE_DATE");
-  var sequenceIndex = savedDate === todayStr
-    ? Number(properties.getProperty("CUSTOMER_ORDER_CODE_NEXT_INDEX"))
-    : 0;
+  var nextSequence = savedDate === todayStr
+    ? Number(properties.getProperty("CUSTOMER_ORDER_CODE_NEXT_SEQUENCE"))
+    : 1;
 
-  if (!isFinite(sequenceIndex) || sequenceIndex < 0 || sequenceIndex > 4) {
-    sequenceIndex = 0;
+  if (!isFinite(nextSequence) || nextSequence < 1 || Math.floor(nextSequence) !== nextSequence) {
+    nextSequence = 1;
   }
 
-  var letter = String.fromCharCode(65 + sequenceIndex);
   properties.setProperties({
     CUSTOMER_ORDER_CODE_DATE: todayStr,
-    CUSTOMER_ORDER_CODE_NEXT_INDEX: String((sequenceIndex + 1) % 5)
+    CUSTOMER_ORDER_CODE_NEXT_SEQUENCE: String(nextSequence + 1)
   });
 
-  return letter +
-    Utilities.formatDate(now, "Asia/Taipei", "HHmm") +
-    phoneDigits.slice(-3);
+  return datePrefix + String(nextSequence).padStart(3, "0");
 }
 
 
@@ -1829,17 +1832,14 @@ function getOrderStatus(orderId, phone) {
         continue;
       }
 
-      var storedPhone = String(
+      var storedPhone = operatorPhoneWithLeadingZero_(
         getValueFromRowByHeaders_(
           row,
           ordersHeaders,
           ["Customer_Phone", "客戶電話"],
           ""
         )
-      )
-        .trim()
-        .replace(/^'/, "")
-        .replace(/[\s-]/g, "");
+      ).replace(/[\s-]/g, "");
 
       if (storedPhone !== phone) {
         return {
@@ -2128,6 +2128,10 @@ function getOrderStatus(orderId, phone) {
  */
 function doPost(e) {
 
+  if (e && e.parameter && e.parameter.operatorWrite === "1") {
+    return handleOperatorWritePost_(e);
+  }
+
   if (e && e.parameter && e.parameter.operatorRead === "1") {
     return handleOperatorReadPost_(e);
   }
@@ -2137,8 +2141,9 @@ function doPost(e) {
     return handleOperatorAuthPost_(e);
   }
 
-  if (e && e.parameter && e.parameter.operatorWrite === "1") {
-    return handleOperatorWritePost_(e);
+  // 顧客訂單查詢頁取消訂單；取消時由後端再次核對訂單編號與完整電話。
+  if (e && e.parameter && e.parameter.customerCancel === "1") {
+    return handleCustomerCancelPost_(e);
   }
 
   var isFormPost =
@@ -2323,6 +2328,108 @@ function doPost(e) {
       .setMimeType(
         ContentService.MimeType.JSON
       );
+  }
+}
+
+
+/**
+ * 顧客取消訂單 POST 入口。瀏覽器以 no-cors 發送，前端再讀取訂單狀態確認寫入結果。
+ */
+function handleCustomerCancelPost_(e) {
+  var result;
+  try {
+    var payload = JSON.parse((e.parameter && e.parameter.customerCancelPayload) || "{}");
+    result = cancelCustomerOrder_(payload.orderId, payload.phone);
+  } catch (err) {
+    result = {
+      status: "error",
+      message: err && err.message ? err.message : "取消訂單失敗。"
+    };
+  }
+
+  return ContentService
+    .createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+/**
+ * 以客戶訂單編號（或舊制 Order_ID）及完整電話核對後，更新訂單狀態。
+ */
+function cancelCustomerOrder_(orderId, phone) {
+  orderId = String(orderId || "").trim().toUpperCase();
+  phone = String(phone || "").trim().replace(/^'/, "").replace(/[\s-]/g, "");
+  if (!orderId || !phone) {
+    throw new Error("請提供客戶訂單編號和完整電話號碼。 ");
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss && ss.getSheetByName("Orders");
+    if (!sheet || sheet.getLastRow() < 2) {
+      throw new Error("查無訂單資料。 ");
+    }
+
+    var headerInfo = getHeaderInfo_(sheet);
+    var headers = headerInfo.headers;
+    var statusColumn = -1;
+    ["Order_Status", "Status", "訂單狀態與叫號"].some(function (name) {
+      var index = headerInfo.indexByKey[normalizeHeader_(name)];
+      if (index !== undefined) {
+        statusColumn = index;
+        return true;
+      }
+      return false;
+    });
+    if (statusColumn < 0) {
+      throw new Error("Orders 工作表找不到訂單狀態欄位。 ");
+    }
+
+    var workStatusColumn = headerInfo.indexByKey[normalizeHeader_("Work_Status")];
+    var rows = sheet.getDataRange().getValues();
+    for (var r = 1; r < rows.length; r++) {
+      var row = rows[r];
+      var rowOrderId = String(getValueFromRowByHeaders_(
+        row, headers, ["Order_ID", "訂單編號"], ""
+      )).trim().toUpperCase();
+      var rowCustomerCode = String(getValueFromRowByHeaders_(
+        row, headers, ["Customer_Order_Code", "客戶訂單編號"], ""
+      )).trim().toUpperCase();
+
+      if (rowOrderId !== orderId && rowCustomerCode !== orderId) continue;
+
+      var storedPhone = operatorPhoneWithLeadingZero_(getValueFromRowByHeaders_(
+        row, headers, ["Customer_Phone", "客戶電話"], ""
+      )).replace(/[\s-]/g, "");
+      if (storedPhone !== phone) {
+        throw new Error("訂單編號或完整電話號碼不正確。 ");
+      }
+
+      var currentStatus = String(row[statusColumn] || "").trim().toLowerCase();
+      var currentWorkStatus = workStatusColumn === undefined
+        ? ""
+        : String(row[workStatusColumn] || "").trim().toLowerCase();
+      if (["已完成", "完成", "completed"].indexOf(currentStatus) >= 0 ||
+          ["已完成", "完成", "completed"].indexOf(currentWorkStatus) >= 0) {
+        throw new Error("此訂單已完成，無法由顧客取消。 ");
+      }
+
+      if (["已取消", "取消", "cancelled"].indexOf(currentStatus) < 0) {
+        sheet.getRange(r + 1, statusColumn + 1).setValue("已取消");
+      }
+      if (workStatusColumn !== undefined &&
+          ["已取消", "取消", "cancelled"].indexOf(currentWorkStatus) < 0) {
+        sheet.getRange(r + 1, workStatusColumn + 1).setValue("已取消");
+      }
+
+      return { status: "success", order_status: "已取消" };
+    }
+
+    throw new Error("查無符合的訂單。 ");
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -2944,108 +3051,125 @@ function getCatalogRules() {
  */
 function getStoreSettings() {
 
-  var ss =
-    SpreadsheetApp.getActiveSpreadsheet();
+  var now = new Date();
+  var date = Utilities.formatDate(now, "Asia/Taipei", "yyyy-MM-dd");
+  var schedule = getBusinessScheduleForDate_(date, now);
+  return {
+    openTime: schedule.openTime,
+    closeTime: schedule.closeTime,
+    pickupStartTime: schedule.pickupStartTime,
+    pickupEndTime: schedule.pickupEndTime,
+    pickupIntervalMinutes: schedule.pickupIntervalMinutes,
+    disabledSlots: schedule.disabledSlots,
+    businessDays: schedule.businessDays,
+    isOpenDay: schedule.isOpenDay,
+    acceptingOrders: schedule.acceptingOrders,
+    closedReason: schedule.message,
+    specialNote: schedule.note,
+    businessType: schedule.businessType
+  };
+}
 
-  var sheet =
-    ss.getSheetByName("Settings");
+/** 依全店狀態 > 指定日期例外 > 每週營業日套用營業規則。 */
+function getBusinessScheduleForDate_(dateValue, now) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var settingsRows = operatorReadRows_(ss, "Settings");
+  var settings = {};
+  settingsRows.forEach(function (row) {
+    var key = String(row.Setting_Key || "").trim();
+    if (key) settings[key] = row.Setting_Value;
+  });
 
-
-  if (!sheet) {
-
-    return {
-
-      openTime: "16:00",
-
-      closeTime: "21:30",
-
-      disabledSlots: []
-
-    };
+  var date = dateValue instanceof Date
+    ? Utilities.formatDate(dateValue, "Asia/Taipei", "yyyy-MM-dd")
+    : String(dateValue || "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    date = Utilities.formatDate(now || new Date(), "Asia/Taipei", "yyyy-MM-dd");
   }
 
+  var businessDays = String(settings.Business_Days || "MON,TUE,WED,THU,FRI,SAT,SUN")
+    .toUpperCase().split(/[\s,，]+/).filter(function (day) { return !!day; });
+  var dayCodes = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  var utcDay = new Date(date + "T12:00:00Z").getUTCDay();
+  var weeklyOpen = businessDays.indexOf(dayCodes[utcDay]) >= 0;
+  var openTime = operatorFormatTime_(settings.Auto_Open_Time) || "06:00";
+  var closeTime = operatorFormatTime_(settings.Auto_Close_Time) || "17:30";
+  var pickupStart = operatorFormatTime_(settings.Pickup_Start_Time) || "16:00";
+  var pickupEnd = operatorFormatTime_(settings.Pickup_End_Time) || "17:30";
+  var interval = Number(settings.Pickup_Slot_Interval_Minutes) || 30;
+  var disabledSlots = String(settings.Disabled_Time_Slots || "").split(",").map(function (item) { return item.trim(); }).filter(Boolean);
+  var globalClosed = String(settings.Store_Status || "OPEN").trim().toUpperCase() === "CLOSED";
+  var exception = operatorReadRows_(ss, "Business_Calendar").filter(function (row) {
+    return operatorFormatDate_(row.Business_Date, "yyyy-MM-dd") === date;
+  })[0] || null;
 
-  var data =
-    sheet
-      .getDataRange()
-      .getValues();
+  var businessType = exception ? String(exception.Business_Type || "").trim().toUpperCase() : "";
+  // 舊版欄位相容：若分頁尚未改用 Business_Type，仍辨識 Is_Closed。
+  if (!businessType && exception && (exception.Is_Closed === true || ["TRUE", "1", "是", "休息"].indexOf(String(exception.Is_Closed || "").trim().toUpperCase()) >= 0)) {
+    businessType = "CLOSED";
+  }
+  var isClosedException = businessType === "CLOSED";
+  var isSpecialOpen = businessType === "SPECIAL_OPEN";
+  var isOpenDay = isSpecialOpen || (!isClosedException && weeklyOpen);
+  var note = exception ? String(exception.Note || exception.Special_Note || "") : "";
 
-
-  var openTime = "16:00";
-
-  var closeTime = "21:30";
-
-  var disabledSlots = [];
-
-
-  for (var i = 0; i < data.length; i++) {
-
-    var key =
-      String(
-        data[i][0] || ""
-      )
-      .trim()
-      .toLowerCase();
-
-
-    var val =
-      data[i][1];
-
-
-    if (
-      (
-        key === "auto_open_time" ||
-        key === "open_time"
-      ) &&
-      val !== ""
-    ) {
-
-      openTime =
-        parseTimeString(
-          val,
-          "16:00"
-        );
-    }
-
-
-    if (
-      (
-        key === "auto_close_time" ||
-        key === "close_time"
-      ) &&
-      val !== ""
-    ) {
-
-      closeTime =
-        parseTimeString(
-          val,
-          "21:30"
-        );
-    }
-
-
-    if (
-      key === "disabled_time_slots" &&
-      val
-    ) {
-
-      disabledSlots =
-        String(val).split(",");
-    }
+  if (exception && isSpecialOpen) {
+    openTime = operatorFormatTime_(exception.Order_Open_Time) || openTime;
+    closeTime = operatorFormatTime_(exception.Order_Close_Time) || closeTime;
+    pickupStart = operatorFormatTime_(exception.Pickup_Start_Time) || pickupStart;
+    pickupEnd = operatorFormatTime_(exception.Pickup_End_Time) || pickupEnd;
+    interval = Number(exception.Pickup_Slot_Interval_Minutes) || interval;
   }
 
+  var acceptingOrders = isOpenDay && !globalClosed;
+  var message = "";
+  if (globalClosed) message = "店鋪目前全店暫停接單。";
+  else if (isClosedException) message = note || "本日店休，不接受新訂單。";
+  else if (!isOpenDay) message = "本日為每週公休日，不接受新訂單。";
+
+  // 自動開關店時間也在伺服器端檢查；處理跨午夜的營業時段。
+  if (acceptingOrders && now && date === Utilities.formatDate(now, "Asia/Taipei", "yyyy-MM-dd")) {
+    var current = Number(Utilities.formatDate(now, "Asia/Taipei", "HHmm"));
+    var start = Number(openTime.replace(":", ""));
+    var end = Number(closeTime.replace(":", ""));
+    var withinHours = start <= end ? current >= start && current < end : current >= start || current < end;
+    if (!withinHours) {
+      acceptingOrders = false;
+      message = "目前不在訂餐網頁開放時間（" + openTime + "–" + closeTime + "）。";
+    }
+  }
 
   return {
-
-    openTime:
-      openTime,
-
-    closeTime:
-      closeTime,
-
-    disabledSlots:
-      disabledSlots
+    date: date, openTime: openTime, closeTime: closeTime,
+    pickupStartTime: pickupStart, pickupEndTime: pickupEnd,
+    pickupIntervalMinutes: interval, disabledSlots: disabledSlots,
+    businessDays: businessDays, isOpenDay: isOpenDay,
+    acceptingOrders: acceptingOrders, globalClosed: globalClosed,
+    businessType: businessType || (weeklyOpen ? "REGULAR" : "CLOSED"),
+    note: note, message: message
   };
+}
+
+function isConfiguredPickupSlot_(slotValue, schedule) {
+  var match = String(slotValue || "").match(/(\d{1,2}:\d{2})\s*[-–至]\s*(\d{1,2}:\d{2})/);
+  if (!match) return false;
+  function minutes(value) {
+    var parts = value.split(":");
+    return Number(parts[0]) * 60 + Number(parts[1]);
+  }
+  var selectedStart = minutes(match[1]);
+  var selectedEnd = minutes(match[2]);
+  var rangeStart = minutes(schedule.pickupStartTime);
+  var rangeEnd = minutes(schedule.pickupEndTime);
+  var interval = Number(schedule.pickupIntervalMinutes) || 30;
+  if (selectedStart < rangeStart || selectedEnd > rangeEnd || selectedEnd <= selectedStart) return false;
+  if ((selectedStart - rangeStart) % interval !== 0 || selectedEnd !== Math.min(selectedStart + interval, rangeEnd)) return false;
+  var disabled = schedule.disabledSlots || [];
+  for (var i = 0; i < disabled.length; i++) {
+    var blocked = String(disabled[i]).replace(/\s/g, "").match(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/);
+    if (blocked && selectedStart < minutes(blocked[2]) && selectedEnd > minutes(blocked[1])) return false;
+  }
+  return true;
 }
 
 
@@ -3592,7 +3716,6 @@ function normalizeBoolean_(value) {
  */
 function handleOperatorAuthPost_(e) {
   var state = "";
-  var origin = "https://red-k-heart.github.io";
   var result;
   try {
     var payload = JSON.parse((e.parameter && (e.parameter.operatorPayload || e.parameter.payload)) || "{}");
@@ -3602,7 +3725,65 @@ function handleOperatorAuthPost_(e) {
   } catch (err) {
     result = { success: false, message: err && err.message ? err.message : "Google 登入驗證失敗。" };
   }
-  operatorStoreResponse_(state, { type: "XIAKA_OPERATOR_AUTH", state: state, result: result });
+  if (/^[a-f0-9]{48}$/.test(state)) {
+    operatorStoreResponse_(state, { type: "XIAKA_OPERATOR_AUTH", state: state, result: result });
+  }
+  return ContentService.createTextOutput("OK").setMimeType(ContentService.MimeType.TEXT);
+}
+
+function operatorStoreResponse_(state, message) {
+  state = String(state || "");
+  if (!/^[a-f0-9]{48}$/.test(state)) throw new Error("作業頁回覆狀態無效。");
+  var serialized = JSON.stringify(message);
+  var chunkSize = 7000;
+  var chunks = [];
+  for (var start = 0; start < serialized.length;) {
+    var end = Math.min(start + chunkSize, serialized.length);
+    // 不要把 UTF-16 surrogate pair 切成兩段，避免中文字以外的符號損壞。
+    if (end < serialized.length && end > start) {
+      var lastCode = serialized.charCodeAt(end - 1);
+      if (lastCode >= 0xD800 && lastCode <= 0xDBFF) end--;
+    }
+    chunks.push(serialized.slice(start, end));
+    start = end;
+  }
+  if (chunks.length < 1 || chunks.length > 500) throw new Error("作業頁回覆資料過大，無法暫存。");
+  var cache = CacheService.getScriptCache();
+  var prefix = "operator:" + state + ":";
+  for (var i = 0; i < chunks.length; i++) cache.put(prefix + "chunk:" + i, chunks[i], 180);
+  cache.put(prefix + "meta", JSON.stringify({ ready: true, chunkCount: chunks.length }), 180);
+}
+
+function operatorGetCachedResponse_(params) {
+  params = params || {};
+  var state = String(params.state || "");
+  if (!/^[a-f0-9]{48}$/.test(state)) return { error: "回覆狀態無效。" };
+  var cache = CacheService.getScriptCache();
+  var prefix = "operator:" + state + ":";
+  var metaText = cache.get(prefix + "meta");
+  if (!metaText) return { pending: true };
+  var meta;
+  try { meta = JSON.parse(metaText); }
+  catch (_) { return { error: "GAS 回覆索引格式錯誤。" }; }
+  if (!Number.isInteger(meta.chunkCount) || meta.chunkCount < 1 || meta.chunkCount > 500) {
+    return { error: "GAS 回覆索引格式錯誤。" };
+  }
+  var mode = String(params.mode || "meta");
+  if (mode === "meta") return { ready: true, chunkCount: meta.chunkCount };
+  if (mode !== "chunk") return { error: "不支援的回覆讀取模式。" };
+  var part = Number(params.part);
+  if (!Number.isInteger(part) || part < 0 || part >= meta.chunkCount) return { error: "回覆區塊索引無效。" };
+  var chunk = cache.get(prefix + "chunk:" + part);
+  if (chunk === null) return { error: "GAS 暫存回覆已過期，請重新登入。" };
+  return { value: chunk };
+}
+
+/** 保留既有呼叫介面，但共用唯一的快取讀取協定。 */
+function operatorPollResponse_(state, mode, part) {
+  return operatorGetCachedResponse_({ state: state, mode: mode, part: part });
+}
+
+function operatorTextResponse_() {
   return ContentService.createTextOutput("OK").setMimeType(ContentService.MimeType.TEXT);
 }
 
@@ -3643,7 +3824,6 @@ function verifyOperatorGoogleCredential_(idToken) {
  */
 function handleOperatorReadPost_(e) {
   var state = "";
-  var origin = "https://red-k-heart.github.io";
   var result;
   try {
     var payload = JSON.parse((e.parameter && (e.parameter.operatorPayload || e.parameter.payload)) || "{}");
@@ -3656,70 +3836,126 @@ function handleOperatorReadPost_(e) {
   } catch (err) {
     result = { success: false, message: err && err.message ? err.message : "讀取作業資料失敗。" };
   }
-  operatorStoreResponse_(state, { type: "XIAKA_OPERATOR_READ", state: state, result: result });
-  return ContentService.createTextOutput("OK").setMimeType(ContentService.MimeType.TEXT);
+  if (/^[a-f0-9]{48}$/.test(state)) {
+    operatorStoreResponse_(state, { type: "XIAKA_OPERATOR_READ", state: state, result: result });
+  }
+  return operatorTextResponse_();
 }
 
-/**
- * 此版本尚未實作訂單／營業設定寫入；回傳結構化錯誤，避免前端輪詢逾時。
- */
+/** 作業員訂單狀態／基本資料寫入：每次驗證 Google 身分、角色及 Revision。 */
 function handleOperatorWritePost_(e) {
-  var payload = {};
-  try { payload = JSON.parse((e.parameter && (e.parameter.operatorPayload || e.parameter.payload)) || "{}"); } catch (_) {}
-  var state = String(payload.state || "");
-  if (!/^[a-f0-9]{48}$/.test(state)) return ContentService.createTextOutput("Invalid operator state").setMimeType(ContentService.MimeType.TEXT);
-  operatorStoreResponse_(state, {
-    type: "XIAKA_OPERATOR_WRITE",
-    state: state,
-    result: { success: false, message: "目前 GAS 版本尚未開放此項寫入功能；資料沒有變更。" }
-  });
-  return ContentService.createTextOutput("OK").setMimeType(ContentService.MimeType.TEXT);
+  var state = "";
+  var result;
+  try {
+    var payload = JSON.parse((e.parameter && (e.parameter.operatorPayload || e.parameter.payload)) || "{}");
+    state = String(payload.state || "");
+    if (!/^[a-f0-9]{48}$/.test(state)) throw new Error("寫入請求狀態無效。");
+    var auth = verifyOperatorGoogleCredential_(String(payload.credential || ""));
+    if (!auth || !auth.success || !auth.user) throw new Error("帳號驗證失敗。");
+    result = updateOperatorOrder_(payload, auth.user);
+  } catch (err) {
+    result = { success: false, message: err && err.message ? err.message : "更新訂單失敗。" };
+  }
+  if (/^[a-f0-9]{48}$/.test(state)) {
+    operatorStoreResponse_(state, { type: "XIAKA_OPERATOR_WRITE", state: state, result: result });
+  }
+  return operatorTextResponse_();
 }
 
-/**
- * 將 POST 的回覆暫存，供前端以 JSONP 分段輪詢取得。
- * state 由前端使用 48 位十六進位隨機值產生；快取期限短，避免回覆長期留存。
- */
-function operatorStoreResponse_(state, message) {
-  state = String(state || "");
-  if (!/^[a-f0-9]{48}$/.test(state)) throw new Error("作業頁回覆狀態無效。");
-  var serialized = JSON.stringify(message);
-  var chunkSize = 7000;
-  var chunks = [];
-  for (var start = 0; start < serialized.length;) {
-    var end = Math.min(start + chunkSize, serialized.length);
-    // 不要把 UTF-16 surrogate pair 切成兩段，避免中文字以外的符號損壞。
-    if (end < serialized.length && end > start) {
-      var lastCode = serialized.charCodeAt(end - 1);
-      if (lastCode >= 0xD800 && lastCode <= 0xDBFF) end--;
+function updateOperatorOrder_(payload, user) {
+  var action = String(payload.action || "");
+  var orderId = String(payload.orderId || "").trim();
+  var lookupOrderId = orderId;
+  var changes = payload.changes || {};
+  if (!orderId) throw new Error("缺少訂單編號。");
+  if (action === "updateOrderDetails" && ["系統管理員", "店長"].indexOf(user.role) < 0) throw new Error("只有系統管理員或店長可以修改訂單資料。");
+  if (["updateOrderStatus", "updateOrderDetails"].indexOf(action) < 0) throw new Error("不支援的訂單操作。");
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss && ss.getSheetByName("Orders");
+    if (!sheet || sheet.getLastRow() < 2) throw new Error("找不到 Orders 訂單資料。");
+    var values = sheet.getDataRange().getValues();
+    var headers = values[0].map(function (value) { return String(value || "").trim(); });
+    var col = {};
+    headers.forEach(function (header, index) { if (header) col[header] = index; });
+    if (col.Order_ID === undefined) throw new Error("Orders 缺少 Order_ID 欄位。");
+    var rowIndex = -1;
+    for (var i = 1; i < values.length; i++) if (String(values[i][col.Order_ID] || "").trim() === lookupOrderId) { rowIndex = i; break; }
+    if (rowIndex < 0 && col.Customer_Order_Code !== undefined) {
+      for (var j = 1; j < values.length; j++) if (String(values[j][col.Customer_Order_Code] || "").trim() === lookupOrderId) { rowIndex = j; break; }
     }
-    chunks.push(serialized.slice(start, end));
-    start = end;
+    if (rowIndex < 0) throw new Error("找不到這筆訂單，請重新載入清單。");
+    var row = values[rowIndex];
+    orderId = String(row[col.Order_ID] || "").trim();
+    if (col.Work_Status === undefined && col.Order_Status === undefined) throw new Error("Orders 缺少 Work_Status / Order_Status 欄位。");
+    var currentRevision = Number(col.Revision === undefined ? 0 : row[col.Revision]) || 0;
+    if (currentRevision !== (Number(payload.revision) || 0)) throw new Error("訂單資料已被其他人更新，請重新載入後確認。");
+    var before = {};
+    headers.forEach(function (header, index) { if (header) before[header] = row[index] instanceof Date ? row[index].toISOString() : row[index]; });
+
+    if (action === "updateOrderStatus") {
+      var statusMap = { completed: "已完成", cancelled: "已取消" };
+      var nextStatus = statusMap[String(changes.status || "")];
+      if (!nextStatus) throw new Error("不支援的訂單狀態。");
+      var currentWorkStatus = operatorNormalizeWorkStatus_(col.Work_Status === undefined ? "" : row[col.Work_Status]);
+      var currentOrderStatus = operatorNormalizeWorkStatus_(col.Order_Status === undefined ? "" : row[col.Order_Status]);
+      if (["completed", "cancelled"].indexOf(currentWorkStatus) >= 0 || ["completed", "cancelled"].indexOf(currentOrderStatus) >= 0) throw new Error("此訂單已完成或取消，不能再次變更狀態。");
+      if (col.Work_Status !== undefined) row[col.Work_Status] = nextStatus;
+      if (col.Order_Status !== undefined) row[col.Order_Status] = nextStatus;
+    } else {
+      var dateValue = String(changes.pickupDate || "").trim();
+      var timeValue = String(changes.pickupTime || "").trim();
+      var nameValue = String(changes.name || "").trim();
+      var phoneValue = String(changes.phone || "").trim();
+      var amountValue = Number(changes.amount);
+      if (!dateValue || isNaN(Date.parse(dateValue)) || !nameValue || !phoneValue || !isFinite(amountValue) || amountValue < 0) throw new Error("日期、姓名、電話或金額格式不正確。");
+      var fields = { Pickup_Date: new Date(dateValue + "T12:00:00+08:00"), Pickup_Time_Slot: timeValue, Customer_Name: nameValue, Customer_Phone: operatorPhoneWithLeadingZero_(phoneValue), Total_Amount: amountValue, Remarks: String(changes.remarks || "").trim() };
+      Object.keys(fields).forEach(function (key) { if (col[key] !== undefined) row[col[key]] = fields[key]; });
+      if (col.Customer_Phone !== undefined) sheet.getRange(rowIndex + 1, col.Customer_Phone + 1).setNumberFormat("@");
+    }
+    operatorEnsureOrderAuditSheet_(ss);
+    if (col.Revision !== undefined) row[col.Revision] = currentRevision + 1;
+    if (col.Updated_At !== undefined) row[col.Updated_At] = new Date();
+    if (col.Updated_By !== undefined) row[col.Updated_By] = user.name || user.email;
+    sheet.getRange(rowIndex + 1, 1, 1, headers.length).setValues([row]);
+    var after = {};
+    headers.forEach(function (header, index) { if (header) after[header] = row[index] instanceof Date ? row[index].toISOString() : row[index]; });
+    operatorAppendOrderAudit_(ss, orderId, action === "updateOrderStatus" ? "更新訂單狀態" : "修改訂單", before, after, user, stateRequestId_(payload));
+    return { success: true, revision: currentRevision + 1 };
+  } finally {
+    lock.releaseLock();
   }
-  if (chunks.length < 1 || chunks.length > 500) throw new Error("作業頁回覆資料過大，無法暫存。");
-  var cache = CacheService.getScriptCache();
-  var prefix = "operator:" + state + ":";
-  for (var i = 0; i < chunks.length; i++) cache.put(prefix + "chunk:" + i, chunks[i], 180);
-  cache.put(prefix + "meta", JSON.stringify({ ready: true, chunkCount: chunks.length }), 180);
 }
 
-function operatorPollResponse_(state, mode, part) {
-  state = String(state || "");
-  mode = String(mode || "");
-  if (!/^[a-f0-9]{48}$/.test(state)) return { error: "作業頁回覆狀態無效。" };
-  var cache = CacheService.getScriptCache();
-  var prefix = "operator:" + state + ":";
-  if (mode === "meta") {
-    var meta = cache.get(prefix + "meta");
-    return meta ? JSON.parse(meta) : { pending: true };
+function stateRequestId_(payload) { return String(payload.state || ""); }
+
+function operatorAppendOrderAudit_(ss, orderId, action, before, after, user, requestId) {
+  var sheet = operatorEnsureOrderAuditSheet_(ss);
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function (value) { return String(value || "").trim(); });
+  var values = { Audit_ID: Utilities.getUuid(), Order_ID: orderId, Action: action, Before_JSON: JSON.stringify(before), After_JSON: JSON.stringify(after), Actor_ID: user.staffId || user.email, Actor_Name: user.name || user.email, Created_At: new Date(), Request_ID: requestId };
+  var row = headers.map(function (header) { return Object.prototype.hasOwnProperty.call(values, header) ? values[header] : ""; });
+  sheet.appendRow(row);
+}
+
+/** 建立或補齊訂單異動紀錄表頭，不清除既有資料或欄位。 */
+function operatorEnsureOrderAuditSheet_(ss) {
+  var sheet = ss.getSheetByName("Order_Audit_Log");
+  if (!sheet) sheet = ss.insertSheet("Order_Audit_Log");
+  var required = ["Audit_ID", "Order_ID", "Action", "Before_JSON", "After_JSON", "Actor_ID", "Actor_Name", "Created_At", "Request_ID"];
+  var lastColumn = sheet.getLastColumn();
+  if (lastColumn < 1) {
+    sheet.getRange(1, 1, 1, required.length).setValues([required]);
+    sheet.setFrozenRows(1);
+    return sheet;
   }
-  if (mode === "chunk") {
-    var index = Number(part);
-    if (!Number.isInteger(index) || index < 0 || index >= 500) return { error: "回覆分段編號無效。" };
-    var chunk = cache.get(prefix + "chunk:" + index);
-    return chunk === null ? { pending: true } : { value: chunk };
-  }
-  return { error: "不支援的作業頁輪詢模式。" };
+  var existing = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(function (value) { return String(value || "").trim(); });
+  var missing = required.filter(function (header) { return existing.indexOf(header) < 0; });
+  if (missing.length) sheet.getRange(1, lastColumn + 1, 1, missing.length).setValues([missing]);
+  sheet.setFrozenRows(1);
+  return sheet;
 }
 
 function getOperatorReadSnapshot_() {
@@ -3731,16 +3967,62 @@ function getOperatorReadSnapshot_() {
     var orderId = String(row.Order_ID || "").trim();
     if (!orderId || orderId === "訂單編號") return;
     if (!orderItemsById[orderId]) orderItemsById[orderId] = [];
-    var name = String(row.Item_Name || row.Product_ID || "商品").trim();
+    var name = String(row.Item_Name || row.Online_Name || row.Product_ID || "商品").trim();
     var qty = Number(row.Quantity) || 0;
-    orderItemsById[orderId].push(name + " × " + qty);
+    var unitPrice = Number(row.Unit_Price) || 0;
+    var lineTotal = Number(row.Line_Total || row.Subtotal) || unitPrice * qty;
+    orderItemsById[orderId].push(name + " × " + qty + (unitPrice ? "（單價 " + unitPrice + "，小計 " + lineTotal + "）" : ""));
   });
 
   var orders = operatorReadRows_(ss, "Orders").map(function (row) {
     var orderId = String(row.Order_ID || "").trim();
     if (!orderId || orderId === "訂單編號") return null;
-    var workStatus = String(row.Work_Status || row.Order_Status || "").trim();
-    var status = operatorNormalizeWorkStatus_(workStatus);
+    var workStatus = String(row.Work_Status || "").trim();
+    var orderStatus = String(row.Order_Status || "").trim();
+    var normalizedWorkStatus = operatorNormalizeWorkStatus_(workStatus);
+    var normalizedOrderStatus = operatorNormalizeWorkStatus_(orderStatus);
+    var status = workStatus ? normalizedWorkStatus : normalizedOrderStatus;
+    // 取消或完成是終態，即使兩個欄位有舊值不一致，也讓分類顯示終態。
+    if (normalizedWorkStatus === "cancelled" || normalizedOrderStatus === "cancelled") {
+      status = "cancelled";
+    } else if (normalizedWorkStatus === "completed" || normalizedOrderStatus === "completed") {
+      status = "completed";
+    }
+    var extraDetails = [];
+    var localizedOrderFields = [
+      { key: "Overall_Pepper", aliases: ["Pepper", "整單胡椒鹽(不加/小/中/大)", "整單胡椒鹽"], label: "整單胡椒鹽(不加/小/中/大)" },
+      { key: "Overall_Chili_Powder", aliases: ["Chili_Powder", "整單辣椒粉(不加/小/中/大)", "整單辣椒粉"], label: "整單辣椒粉(不加/小/中/大)" },
+      { key: "Overall_Chili_Sauce", aliases: ["Chili_Sauce", "整單辣醬(要/不加)", "整單辣醬"], label: "整單辣醬(要/不加)" },
+      { key: "Veg_Separate", aliases: ["蔬菜分裝選項", "蔬菜分裝"], label: "蔬菜分裝選項" },
+      { key: "Extra_Pepper_Pack", aliases: ["胡椒鹽夾鏈包數量"], label: "胡椒鹽夾鏈包數量" },
+      { key: "Extra_Chili_Pack", aliases: ["辣椒粉夾鏈包數量"], label: "辣椒粉夾鏈包數量" },
+      { key: "Extra_Sauce_Pack", aliases: ["辣醬夾鏈包數量"], label: "辣醬夾鏈包數量" },
+      { key: "Discount_Amount", aliases: ["折扣金額NT$", "折扣金額"], label: "折扣金額NT$" },
+      { key: "Order_Type", aliases: ["取餐類型"], label: "取餐類型" }
+    ];
+    var localizedFieldKeys = [];
+    localizedOrderFields.forEach(function (field) {
+      localizedFieldKeys.push(field.key);
+      field.aliases.forEach(function (alias) { localizedFieldKeys.push(alias); });
+      var value = row[field.key];
+      if (value === "" || value === null || value === undefined) {
+        for (var a = 0; a < field.aliases.length; a++) {
+          var aliasValue = row[field.aliases[a]];
+          if (aliasValue !== "" && aliasValue !== null && aliasValue !== undefined) { value = aliasValue; break; }
+        }
+      }
+      if (value === "" || value === null || value === undefined) return;
+      if (value instanceof Date) value = operatorFormatDate_(value, "yyyy-MM-dd HH:mm");
+      extraDetails.push({ label: field.label, value: String(value) });
+    });
+    var coreOrderFields = ["Order_ID", "Customer_Order_Code", "Order_Time", "Pickup_Date", "Pickup_Time_Slot", "Customer_Name", "Customer_Phone", "Total_Amount", "Payment_Status", "Work_Status", "Order_Status", "Remarks", "Revision"];
+    Object.keys(row).forEach(function (key) {
+      if (coreOrderFields.indexOf(key) >= 0 || localizedFieldKeys.indexOf(key) >= 0) return;
+      var value = row[key];
+      if (value === "" || value === null || value === undefined) return;
+      if (value instanceof Date) value = operatorFormatDate_(value, "yyyy-MM-dd HH:mm");
+      extraDetails.push({ label: key, value: String(value) });
+    });
     return {
       id: String(row.Customer_Order_Code || orderId),
       systemId: orderId,
@@ -3748,11 +4030,12 @@ function getOperatorReadSnapshot_() {
       pickupDate: operatorFormatDate_(row.Pickup_Date, "yyyy-MM-dd"),
       pickupTime: String(row.Pickup_Time_Slot || ""),
       name: String(row.Customer_Name || ""),
-      phone: String(row.Customer_Phone || ""),
+      phone: operatorPhoneWithLeadingZero_(row.Customer_Phone),
       amount: Number(row.Total_Amount) || 0,
       payment: String(row.Payment_Status || ""),
       status: status,
       items: orderItemsById[orderId] || [],
+      extraDetails: extraDetails,
       remarks: String(row.Remarks || ""),
       revision: Number(row.Revision) || 0
     };
@@ -3783,12 +4066,17 @@ function getOperatorReadSnapshot_() {
     if (row.Setting_Key) settingsMap[String(row.Setting_Key).trim()] = row.Setting_Value;
   });
   var statusValue = String(settingsMap.Store_Status || "OPEN").trim().toUpperCase();
+  var businessDays = String(settingsMap.Business_Days || "MON,TUE,WED,THU,FRI,SAT,SUN")
+    .toUpperCase().split(/[\s,，]+/).filter(function (day) { return !!day; });
 
   var pickupSlots = operatorReadRows_(ss, "Pickup_Slots").map(function (row) {
     if (String(row.Pickup_Date || "") === "取餐日期") return null;
+    var startTime = operatorFormatTime_(row.Start_Time);
+    var endTime = operatorFormatTime_(row.End_Time);
+    if (!startTime) return null;
     return {
       date: operatorFormatDate_(row.Pickup_Date, "yyyy-MM-dd"),
-      time: String(row.Start_Time || "") + (row.End_Time ? "–" + String(row.End_Time) : ""),
+      time: startTime + (endTime ? "–" + endTime : ""),
       enabled: row.Is_Enabled === true || ["TRUE", "1", "是", "開放"].indexOf(String(row.Is_Enabled).toUpperCase()) >= 0
     };
   }).filter(function (row) { return !!row; });
@@ -3796,13 +4084,19 @@ function getOperatorReadSnapshot_() {
   var businessCalendar = operatorReadRows_(ss, "Business_Calendar").map(function (row) {
     var date = operatorFormatDate_(row.Business_Date, "yyyy-MM-dd");
     if (!date || date === "營業日期") return null;
+    var businessType = String(row.Business_Type || "").trim().toUpperCase();
     var closedValue = String(row.Is_Closed || "").trim().toUpperCase();
+    var closed = businessType === "CLOSED" || (!businessType && (row.Is_Closed === true || ["TRUE", "1", "是", "休息"].indexOf(closedValue) >= 0));
     return {
       date: date,
-      closed: row.Is_Closed === true || ["TRUE", "1", "是", "休息"].indexOf(closedValue) >= 0,
+      businessType: businessType || (closed ? "CLOSED" : "SPECIAL_OPEN"),
+      closed: closed,
       openTime: operatorFormatTime_(row.Order_Open_Time),
       closeTime: operatorFormatTime_(row.Order_Close_Time),
-      note: String(row.Special_Note || "")
+      pickupStartTime: operatorFormatTime_(row.Pickup_Start_Time),
+      pickupEndTime: operatorFormatTime_(row.Pickup_End_Time),
+      pickupIntervalMinutes: Number(row.Pickup_Slot_Interval_Minutes) || null,
+      note: String(row.Note || row.Special_Note || "")
     };
   }).filter(function (row) { return !!row; });
 
@@ -3840,8 +4134,13 @@ function getOperatorReadSnapshot_() {
     products: products,
     settings: {
       closed: statusValue === "CLOSED",
+      businessDays: businessDays,
       openTime: operatorFormatTime_(settingsMap.Auto_Open_Time),
       closeTime: operatorFormatTime_(settingsMap.Auto_Close_Time),
+      pickupStartTime: operatorFormatTime_(settingsMap.Pickup_Start_Time),
+      pickupEndTime: operatorFormatTime_(settingsMap.Pickup_End_Time),
+      pickupIntervalMinutes: Number(settingsMap.Pickup_Slot_Interval_Minutes) || 30,
+      disabledSlots: String(settingsMap.Disabled_Time_Slots || "").split(",").map(function (slot) { return slot.trim(); }).filter(Boolean),
       note: String(settingsMap.Special_Note || "")
     },
     businessCalendar: businessCalendar,
@@ -3863,16 +4162,49 @@ function operatorReadRows_(ss, sheetName) {
 }
 
 function operatorNormalizeWorkStatus_(value) {
-  var status = String(value || "").trim();
-  if (status === "準備中") return "preparing";
-  if (status === "已完成" || status === "完成") return "completed";
-  if (status === "已取消" || status === "取消") return "cancelled";
+  var status = String(value || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (["準備中", "preparing", "製作中", "inprogress", "in_progress"].indexOf(status) >= 0) return "preparing";
+  if (["已完成", "完成", "completed", "complete", "done"].indexOf(status) >= 0) return "completed";
+  if (["已取消", "取消", "取消訂單", "訂單已取消", "cancelled", "canceled"].indexOf(status) >= 0) return "cancelled";
   return "pending";
 }
 
 function operatorFormatDate_(value, pattern) {
   if (value instanceof Date && !isNaN(value.getTime())) return Utilities.formatDate(value, "Asia/Taipei", pattern);
   return String(value || "").trim();
+}
+
+/** 一次性整理 Orders.Customer_Phone：以純文字存放並補回遺失的手機開頭 0。 */
+function fixCustomerPhoneLeadingZeros() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss && ss.getSheetByName("Orders");
+  if (!sheet || sheet.getLastRow() < 1) throw new Error("找不到 Orders 工作表或標題列。");
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function (value) { return String(value || "").trim(); });
+  var phoneColumn = headers.indexOf("Customer_Phone");
+  if (phoneColumn < 0) phoneColumn = headers.indexOf("客戶電話");
+  if (phoneColumn < 0) throw new Error("Orders 工作表找不到 Customer_Phone 欄位。");
+  if (sheet.getLastRow() < 2) return "沒有訂單資料需要修正。";
+  var range = sheet.getRange(2, phoneColumn + 1, sheet.getLastRow() - 1, 1);
+  var values = range.getValues();
+  var changed = 0;
+  var fixed = values.map(function (row) {
+    var original = row[0];
+    var normalized = operatorPhoneWithLeadingZero_(original);
+    if (String(original === null || original === undefined ? "" : original) !== normalized) changed++;
+    return [normalized];
+  });
+  range.setNumberFormat("@");
+  range.setValues(fixed);
+  return "已將 Customer_Phone 設為純文字並補回 " + changed + " 筆手機號碼的開頭 0。";
+}
+
+function operatorPhoneWithLeadingZero_(value) {
+  if (value === null || value === undefined || value === "") return "";
+  var phone = String(value).trim().replace(/^'/, "");
+  var digits = phone.replace(/\D/g, "");
+  if (/^9\d{8}$/.test(digits)) return "0" + digits;
+  if (/^8869\d{8}$/.test(digits)) return "0" + digits.slice(3);
+  return phone;
 }
 
 function operatorFormatTime_(value) {
@@ -3882,4 +4214,10 @@ function operatorFormatTime_(value) {
     return ("0" + Math.floor(minutes / 60)).slice(-2) + ":" + ("0" + (minutes % 60)).slice(-2);
   }
   return String(value || "").trim();
+}
+
+function authorizeUrlFetchForOperator() {
+  UrlFetchApp.fetch("https://www.googleapis.com", {
+    muteHttpExceptions: true
+  });
 }

@@ -1,8 +1,10 @@
 # GAS 原始碼
 
-此目錄已保存使用者於 2026-10-28 提供之 `gas.rar` 內的 7 個原始檔案，內容未改寫，且 SHA-256 全部與原始 `import-record.json` 一致。該紀錄的專案 ID 與使用者指定專案相同；檔案雜湊不構成 Google 線上部署身分證明。
+使用者於 2026-10-28 提供之 `gas.rar` 原始快照保存在 Git 提交 `3cbd212`，當時 7 個檔案的 SHA-256 全部與原始 `import-record.json` 一致。該紀錄的專案 ID 與使用者指定專案相同；檔案雜湊不構成 Google 線上部署身分證明。
 
-**這是現況快照，不可直接部署。** 已發現 31 個重複全域函式，其中 12 個內容不同。`npm run gas:inspect` 會以非零狀態阻止將這份快照視為可部署版本。完整證據及測試範圍見 [GAS 檢查結果](../docs/gas-review.md)。
+`src/` 現在是整併後的工作版本，共 6 個檔案。`Code.js` 提供唯一的核心後端，`ReceiptService.js` 保留收據服務；重複的 `saveOrderToDatabase.js` 已移除。51 個既有全域函式名稱全數保留，且沒有重複定義。決策與測試見 [GAS 整併說明](../docs/gas-consolidation.md)，原始問題記錄見 [GAS 檢查結果](../docs/gas-review.md)。
+
+`import-record.json` 保留原始上傳的來源證據，**不會隨後續程式編輯更新雜湊**。要核對原始快照請檢出 `3cbd212`，不要拿這份原始紀錄判定現行修改後的程式有無變更。
 
 - 專案 ID 記錄在 `config/integrations.json`。
 - `npm run gas:pull` 使用已授權的 clasp **下載**指定專案，將檔案匯入 `gas/src/`。
@@ -14,6 +16,6 @@
 
 這裡沒有正式專案的 `.clasp.json`，也沒有 `push`、`run` 或部署 npm 指令。第一次版本管理只建立現況快照，不更新雲端專案。
 
-因原始碼已存在，`gas:pull` 與 `gas:import` 會拒絕再次匯入，以免覆寫此基準版本。下次更新應下載到另一個資料夾，檢查差異後另外提交。
+因原始碼已存在，`gas:pull` 與 `gas:import` 會拒絕再次匯入，以免覆寫工作版本。下次更新應下載到另一個資料夾，檢查差異後另外提交。
 
 完整程序見 [docs/integration.md](../docs/integration.md)。

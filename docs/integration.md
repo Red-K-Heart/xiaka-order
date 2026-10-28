@@ -10,7 +10,7 @@
 | GAS 編輯專案 | https://script.google.com/home/projects/1FfzwD63lbb4QV5MqyKxV8cg0MYxqW90Hz4_z90Rmc5P1WuxdLHFr58CP/edit |
 | 前端所用部署 | 兩個 HTML 內的 `GAS_WEB_APP_URL`，另記錄於 `config/integrations.json` |
 | LINE / Google 登入設定 | LIFF ID 與 Google OAuth client ID 已由前端讀取並記錄於設定清單；不是登入憑證 |
-| 後端來源 | 使用者上傳的 `gas.rar`，7 個原始檔案已匯入 `gas/src/`，與原始匯入紀錄雜湊一致 |
+| 後端來源 | 使用者上傳的 7 檔原始快照保存在提交 `3cbd212`；現行 `gas/src/` 是整併後的 6 檔工作版本 |
 | 工作表結構 | 已從程式列出預期的名稱與部分欄位；尚未連線核對實際試算表 |
 
 `config/integrations.json` 是供工具檢查的設定清單，不會改寫瀏覽器內的正式設定。提供的編輯專案是否產生目前使用中的 `/exec` 部署，以及該專案實際連接哪個試算表，仍須在取得 Google 存取權後核對。
@@ -49,17 +49,17 @@ npm run gas:import -- /absolute/path/to/export
 | `npm run test:unit` 中的匯入測試 | 匯入保留內容、來源記錄、專案身分檢查、不覆寫與拒絕符號連結 | 不驗證 Google 遠端存取權 |
 | `npm run test:unit` 中的 GAS 測試 | 實際匯入函式的身分驗證、JSONP、快取、角色與 Revision；全部使用本機服務替身 | 不代表線上 Google 驗證、SpreadsheetApp 或實際部署已成功 |
 | `npm run test:browser` | 店務示例訂單搜尋、計算機與本機保存；訂購頁 JSONP 菜單、購物車、結帳、休息狀態、失敗後重試 | 不驗證真實 Google / LINE 登入、付款、訂單提交或離線 Service Worker |
-| `npm run gas:inspect` | 原始 GAS 全域函式定義的重複與來源位置 | 目前以狀態 1 失敗，需先整併衝突才可部署 |
+| `npm run gas:inspect` | GAS 全域函式定義的重複與來源位置 | 整併後以狀態 0 通過；不代表真實 Google 整合已驗證 |
 
 瀏覽器測試使用合成資料；所有外部網路連線均被攔截。只模擬所需的唯讀菜單 API，其餘請求（包含會寫入的 GET 與 POST）會被阻擋。測試中的最小 CSS 替代品只支援顯示/隱藏判斷，不是版面或正式 CDN 驗證。
 
-GitHub Actions 只使用 `contents: read`，執行安裝、測試及 GAS 函式衝突檢查，沒有 Google 密鑰、GAS push 或正式網站部署步驟。原始衝突尚未整併，因此目前 CI 預期在最後的檢查失敗；本機測試結果不能當成遠端 Actions 已成功。
+GitHub Actions 只使用 `contents: read`，執行安裝、測試及 GAS 函式衝突檢查，沒有 Google 密鑰、GAS push 或正式網站部署步驟。本機功能測試與衝突檢查已通過；這不代表遠端 Actions 已執行成功。
 
 ## 取得原始碼後的下一階段
 
-原始 GAS 已匯入，已完成的本機檢查見 [gas-review.md](gas-review.md)。以下工作尚未完成：
+原始 GAS 已匯入並整併，現行決策與測試見 [gas-consolidation.md](gas-consolidation.md)，原始檢查見 [gas-review.md](gas-review.md)。以下工作尚未完成：
 
-1. 整併重複函式，確定要保留的 API 與訂單編號格式。核對實際綁定的試算表、線上工作表／欄位、觸發器及 Script Properties 設定；原始程式使用 `getActiveSpreadsheet()`，不能只憑下載檔案證明所連接試算表的 ID。
+1. 核對實際綁定的試算表、線上工作表／欄位、觸發器及 Script Properties 設定。整併後選用日期加流水號產生新編號，舊字母編號仍可查詢。程式使用 `getActiveSpreadsheet()`，不能只憑下載檔案證明所連接試算表的 ID。
 2. 核對前端的 `/exec` 部署確實對應提供的 GAS 專案，並確認部署版本及授權設定。
 3. 將實際後端入口與前端契約對照。目前前端使用 `storeSettings`、`catalogRules`、`products`、`orderStatus`、`submitOrder`、取消訂單 POST，以及店務 `operatorAuth` / `operatorRead` / `operatorWrite` POST 搭配 `operatorPoll` JSONP。**有些 GET 會寫入資料，不能僅以 HTTP 方法判斷唯讀。**
 4. 建立獨立的測試試算表、測試 GAS 專案與測試部署，只放合成或去識別資料。原正式專案可能把試算表 ID 寫死；未完成檢查前不能直接複製後執行。建立遠端專案與部署需另行取得授權。
