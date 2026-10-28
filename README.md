@@ -46,4 +46,8 @@ GitHub Actions 在 PR 與 `main` 更新時執行測試及函式衝突檢查，�
 
 [整合與授權指引](docs/integration.md) 說明如何匯入真正的 GAS 原始碼、取得 Google 授權、建立測試環境及安排發布。
 
-使用者提供的 7 個原始檔案已保存在 Git 提交 `3cbd212`，當時所有雜湊相符。`gas/src/` 現在包含整併後的 6 個檔案；`gas/import-record.json` 保留原始上傳來源紀錄，不是現行程式的雜湊清單。尚未存取真實試算表、Script Properties 的值或線上部署；沒有更新正式程式或資料。
+使用者提供的 7 個原始檔案已保存在 Git 提交 `3cbd212`，當時所有雜湊相符。`gas/src/` 目前包含核心、收據及新增的作業頁資料服務等 7 個檔案；`gas/import-record.json` 保留原始上傳來源紀錄，不是現行程式的雜湊清單。尚未存取真實試算表、Script Properties 的值或線上部署；沒有更新正式程式或資料。
+
+## 作業頁欄位與儲存
+
+最新欄位讀寫對照、預設值、日期格式及尚未完成的 Google 驗證，請看 [作業頁欄位檢查](docs/operator-field-audit.md)。`OperatorData.js` 補齊開店、結算／支出、營業／庫存設定與現場交易；作業頁使用 yyyymmdd 與 24 小時制。讀寫測試採記憶體試算表，不能當作正式 Google 儲存成功的證明。

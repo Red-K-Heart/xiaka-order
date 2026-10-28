@@ -1,0 +1,113 @@
+{
+  "contractVersion": 2,
+  "dateFormat": "yyyymmdd",
+  "timeFormat": "HH:mm (24-hour)",
+  "tables": {
+    "Daily_Openings": [
+      "Opening_Date",
+      "Status",
+      "Opening_Float",
+      "Weather",
+      "Notes",
+      "Revision",
+      "Created_At",
+      "Created_By",
+      "Updated_At",
+      "Updated_By"
+    ],
+    "Opening_Inventory": [
+      "Opening_Date",
+      "Product_ID",
+      "Incoming_Qty",
+      "Reserved_Qty",
+      "Ordered_Qty"
+    ],
+    "Daily_Settlements": [
+      "Settlement_Date",
+      "Status",
+      "Cash_Sales_Amount",
+      "Opening_Float",
+      "Counted_Cash",
+      "Expense_Amount",
+      "Expense_Base_Amount",
+      "Waste_Amount",
+      "Notes",
+      "Revision",
+      "Created_At",
+      "Created_By",
+      "Updated_At",
+      "Updated_By",
+      "Closed_At",
+      "Closed_By"
+    ],
+    "Settlement_Inventory_Counts": [
+      "Settlement_Date",
+      "Product_ID",
+      "Counted_Qty",
+      "Sold_Qty",
+      "Waste_Qty",
+      "Reserved_Qty",
+      "Order_Prep_Qty"
+    ],
+    "Expense_Ledger": [
+      "Settlement_Date",
+      "Expense_ID",
+      "Category",
+      "Expense_Name",
+      "Amount",
+      "Notes",
+      "Active"
+    ],
+    "Operator_Audit_Log": [
+      "Request_ID",
+      "Action",
+      "Record_Key",
+      "Actor_ID",
+      "Actor_Name",
+      "Created_At",
+      "Changes_JSON"
+    ],
+    "Settings": [
+      "Setting_Key",
+      "Setting_Value"
+    ],
+    "Inventory_Log": [
+      "Request_ID",
+      "Product_ID",
+      "Before_Qty",
+      "After_Qty",
+      "Manual_Hidden",
+      "Reason",
+      "Actor",
+      "Created_At"
+    ],
+    "Orders": [
+      "Order_ID",
+      "Customer_Order_Code",
+      "Order_Time",
+      "Pickup_Date",
+      "Pickup_Time_Slot",
+      "Customer_Name",
+      "Customer_Phone",
+      "Total_Amount",
+      "Payment_Status",
+      "Order_Status",
+      "Work_Status",
+      "Remarks",
+      "Revision",
+      "Created_At",
+      "Created_By",
+      "Updated_At",
+      "Updated_By"
+    ],
+    "OrderItems": [
+      "Order_ID",
+      "Product_ID",
+      "Item_Name",
+      "Quantity",
+      "Unit_Price",
+      "Subtotal",
+      "Is_Gift"
+    ]
+  }
+}

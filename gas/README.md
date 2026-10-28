@@ -2,7 +2,7 @@
 
 使用者於 2026-10-28 提供之 `gas.rar` 原始快照保存在 Git 提交 `3cbd212`，當時 7 個檔案的 SHA-256 全部與原始 `import-record.json` 一致。該紀錄的專案 ID 與使用者指定專案相同；檔案雜湊不構成 Google 線上部署身分證明。
 
-`src/` 現在是整併後的工作版本，共 6 個檔案。`Code.js` 提供唯一的核心後端，`ReceiptService.js` 保留收據服務；重複的 `saveOrderToDatabase.js` 已移除。51 個既有全域函式名稱全數保留，且沒有重複定義。決策與測試見 [GAS 整併說明](../docs/gas-consolidation.md)，原始問題記錄見 [GAS 檢查結果](../docs/gas-review.md)。
+`src/` 現在是整併後的工作版本，共 7 個檔案。`Code.js` 提供唯一的核心後端，`OperatorData.js` 提供作業頁資料契約與讀寫，`ReceiptService.js` 保留收據服務；重複的 `saveOrderToDatabase.js` 已移除。51 個既有全域函式名稱全數保留，且沒有重複定義。決策與測試見 [GAS 整併說明](../docs/gas-consolidation.md)，原始問題記錄見 [GAS 檢查結果](../docs/gas-review.md)。
 
 `import-record.json` 保留原始上傳的來源證據，**不會隨後續程式編輯更新雜湊**。要核對原始快照請檢出 `3cbd212`，不要拿這份原始紀錄判定現行修改後的程式有無變更。
 
@@ -19,3 +19,5 @@
 因原始碼已存在，`gas:pull` 與 `gas:import` 會拒絕再次匯入，以免覆寫工作版本。下次更新應下載到另一個資料夾，檢查差異後另外提交。
 
 完整程序見 [docs/integration.md](../docs/integration.md)。
+
+作業頁資料讀寫已在後續加入 `src/OperatorData.js`，根目錄及 GAS 的 operator.html 已使用相同契約。原本 6 檔整併版本是前一階段的記錄；最新資料流與欄位要求見 [operator-field-audit.md](../docs/operator-field-audit.md)。

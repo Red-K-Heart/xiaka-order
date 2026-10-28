@@ -10,7 +10,7 @@
 | GAS 編輯專案 | https://script.google.com/home/projects/1FfzwD63lbb4QV5MqyKxV8cg0MYxqW90Hz4_z90Rmc5P1WuxdLHFr58CP/edit |
 | 前端所用部署 | 兩個 HTML 內的 `GAS_WEB_APP_URL`，另記錄於 `config/integrations.json` |
 | LINE / Google 登入設定 | LIFF ID 與 Google OAuth client ID 已由前端讀取並記錄於設定清單；不是登入憑證 |
-| 後端來源 | 使用者上傳的 7 檔原始快照保存在提交 `3cbd212`；現行 `gas/src/` 是整併後的 6 檔工作版本 |
+| 後端來源 | 使用者上傳的 7 檔原始快照保存在提交 `3cbd212`；現行 `gas/src/` 包含整併後核心及新增作業頁服務，共 7 檔 |
 | 工作表結構 | 已從程式列出預期的名稱與部分欄位；尚未連線核對實際試算表 |
 
 `config/integrations.json` 是供工具檢查的設定清單，不會改寫瀏覽器內的正式設定。提供的編輯專案是否產生目前使用中的 `/exec` 部署，以及該專案實際連接哪個試算表，仍須在取得 Google 存取權後核對。
@@ -74,3 +74,5 @@ GitHub Actions 只使用 `contents: read`，執行安裝、測試及 GAS 函式�
 發布前記錄舊版 Git commit、GAS 部署 ID 與版本，以便回復程式。試算表結構變更需另行規劃備份與回復方法，回復 GAS 程式並不會回復資料。
 
 需要的額外網域已加入環境草稿：`api.github.com`、`docs.google.com`、`script.googleapis.com`、`sheets.googleapis.com`、`oauth2.googleapis.com`、`www.googleapis.com`、`red-k-heart.github.io`。保留原有 CDN、Google、LINE 白名單。儲存草稿不保證目前執行中的代理已放行；套用後須重試實際服務。
+
+最新作業頁的資料契約已改為 v2，日期 yyyymmdd、時間 24 小時制，且加入 OperatorData.js。完整逐欄對照與目前 Google 連線限制見 [operator-field-audit.md](operator-field-audit.md)；不可將先前 6 檔整併清單或原始快照當作這次的部署清單。

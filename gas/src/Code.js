@@ -3080,6 +3080,7 @@ function getBusinessScheduleForDate_(dateValue, now) {
     if (key) settings[key] = row.Setting_Value;
   });
 
+  if (/^\d{8}$/.test(String(dateValue || ""))) dateValue = String(dateValue).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
   var date = dateValue instanceof Date
     ? Utilities.formatDate(dateValue, "Asia/Taipei", "yyyy-MM-dd")
     : String(dateValue || "").trim().slice(0, 10);
@@ -3087,7 +3088,7 @@ function getBusinessScheduleForDate_(dateValue, now) {
     date = Utilities.formatDate(now || new Date(), "Asia/Taipei", "yyyy-MM-dd");
   }
 
-  var businessDays = String(settings.Business_Days || "MON,TUE,WED,THU,FRI,SAT,SUN")
+  var businessDays = String(settings.Business_Days === undefined || settings.Business_Days === null ? "MON,TUE,WED,THU,FRI,SAT,SUN" : settings.Business_Days)
     .toUpperCase().split(/[\s,，]+/).filter(function (day) { return !!day; });
   var dayCodes = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
   var utcDay = new Date(date + "T12:00:00Z").getUTCDay();
@@ -3832,6 +3833,7 @@ function handleOperatorReadPost_(e) {
     var auth = verifyOperatorGoogleCredential_(String(payload.credential || ""));
     if (!auth || !auth.success || !auth.user) throw new Error("帳號驗證失敗。");
     if (payload.action !== "readSnapshot") throw new Error("不支援的唯讀操作。");
+    operatorCheckSpreadsheet_(SpreadsheetApp.getActiveSpreadsheet());
     result = { success: true, user: auth.user, data: getOperatorReadSnapshot_() };
   } catch (err) {
     result = { success: false, message: err && err.message ? err.message : "讀取作業資料失敗。" };
@@ -3852,7 +3854,7 @@ function handleOperatorWritePost_(e) {
     if (!/^[a-f0-9]{48}$/.test(state)) throw new Error("寫入請求狀態無效。");
     var auth = verifyOperatorGoogleCredential_(String(payload.credential || ""));
     if (!auth || !auth.success || !auth.user) throw new Error("帳號驗證失敗。");
-    result = updateOperatorOrder_(payload, auth.user);
+    result = operatorWriteData_(payload, auth.user);
   } catch (err) {
     result = { success: false, message: err && err.message ? err.message : "更新訂單失敗。" };
   }
@@ -3911,20 +3913,28 @@ function updateOperatorOrder_(payload, user) {
       var nameValue = String(changes.name || "").trim();
       var phoneValue = String(changes.phone || "").trim();
       var amountValue = Number(changes.amount);
-      if (!dateValue || isNaN(Date.parse(dateValue)) || !nameValue || !phoneValue || !isFinite(amountValue) || amountValue < 0) throw new Error("日期、姓名、電話或金額格式不正確。");
-      var fields = { Pickup_Date: new Date(dateValue + "T12:00:00+08:00"), Pickup_Time_Slot: timeValue, Customer_Name: nameValue, Customer_Phone: operatorPhoneWithLeadingZero_(phoneValue), Total_Amount: amountValue, Remarks: String(changes.remarks || "").trim() };
+      phoneValue = operatorPhoneWithLeadingZero_(phoneValue).replace(/[\s-]/g, "");
+      if (!/^(?:09\d{8}|0[2-8]\d{7,8})$/.test(phoneValue)) throw new Error("請填寫完整電話號碼。");
+      dateValue = operatorDay_(dateValue);
+      if (!nameValue || !phoneValue || !isFinite(amountValue) || amountValue < 0) throw new Error("日期、姓名、電話或金額格式不正確。");
+      if (!/^(?:[01]\d|2[0-3]):[0-5]\d(?:[-–](?:[01]\d|2[0-3]):[0-5]\d)?$/.test(timeValue)) throw new Error("取餐時間須為 24 小時制 HH:mm 或 HH:mm-HH:mm。");
+      var fields = { Pickup_Date: dateValue, Pickup_Time_Slot: timeValue, Customer_Name: nameValue, Customer_Phone: operatorPhoneWithLeadingZero_(phoneValue), Total_Amount: amountValue, Remarks: String(changes.remarks || "").trim() };
       Object.keys(fields).forEach(function (key) { if (col[key] !== undefined) row[col[key]] = fields[key]; });
       if (col.Customer_Phone !== undefined) sheet.getRange(rowIndex + 1, col.Customer_Phone + 1).setNumberFormat("@");
+      if (col.Pickup_Date !== undefined) sheet.getRange(rowIndex + 1, col.Pickup_Date + 1).setNumberFormat("@");
     }
-    operatorEnsureOrderAuditSheet_(ss);
-    if (col.Revision !== undefined) row[col.Revision] = currentRevision + 1;
-    if (col.Updated_At !== undefined) row[col.Updated_At] = new Date();
-    if (col.Updated_By !== undefined) row[col.Updated_By] = user.name || user.email;
-    sheet.getRange(rowIndex + 1, 1, 1, headers.length).setValues([row]);
-    var after = {};
-    headers.forEach(function (header, index) { if (header) after[header] = row[index] instanceof Date ? row[index].toISOString() : row[index]; });
+    var patch = {};
+    if (action === "updateOrderStatus") {
+      if (col.Work_Status !== undefined) patch.Work_Status = row[col.Work_Status];
+      if (col.Order_Status !== undefined) patch.Order_Status = row[col.Order_Status];
+    } else Object.keys(fields).forEach(function (key) { patch[key] = fields[key]; });
+    patch.Revision = currentRevision + 1;
+    patch.Updated_At = operatorStamp_();
+    patch.Updated_By = user.name || user.email;
+    operatorUpsert_(ss, "Orders", { Order_ID: orderId }, patch, ["Order_ID"].concat(Object.keys(patch)));
+    var after = Object.assign({}, before, patch);
     operatorAppendOrderAudit_(ss, orderId, action === "updateOrderStatus" ? "更新訂單狀態" : "修改訂單", before, after, user, stateRequestId_(payload));
-    return { success: true, revision: currentRevision + 1 };
+    return { success: true, verified: true, revision: currentRevision + 1 };
   } finally {
     lock.releaseLock();
   }
@@ -3935,8 +3945,10 @@ function stateRequestId_(payload) { return String(payload.state || ""); }
 function operatorAppendOrderAudit_(ss, orderId, action, before, after, user, requestId) {
   var sheet = operatorEnsureOrderAuditSheet_(ss);
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function (value) { return String(value || "").trim(); });
-  var values = { Audit_ID: Utilities.getUuid(), Order_ID: orderId, Action: action, Before_JSON: JSON.stringify(before), After_JSON: JSON.stringify(after), Actor_ID: user.staffId || user.email, Actor_Name: user.name || user.email, Created_At: new Date(), Request_ID: requestId };
+  var values = { Audit_ID: Utilities.getUuid(), Order_ID: orderId, Action: action, Before_JSON: JSON.stringify(before), After_JSON: JSON.stringify(after), Actor_ID: user.staffId || user.email, Actor_Name: user.name || user.email, Created_At: operatorStamp_(), Request_ID: requestId };
   var row = headers.map(function (header) { return Object.prototype.hasOwnProperty.call(values, header) ? values[header] : ""; });
+  var timestampColumn = headers.indexOf("Created_At");
+  if (timestampColumn >= 0) sheet.getRange(sheet.getLastRow()+1, timestampColumn+1).setNumberFormat("@");
   sheet.appendRow(row);
 }
 
@@ -4012,7 +4024,7 @@ function getOperatorReadSnapshot_() {
         }
       }
       if (value === "" || value === null || value === undefined) return;
-      if (value instanceof Date) value = operatorFormatDate_(value, "yyyy-MM-dd HH:mm");
+      if (value instanceof Date) value = operatorFormatDate_(value, "yyyyMMdd HH:mm:ss");
       extraDetails.push({ label: field.label, value: String(value) });
     });
     var coreOrderFields = ["Order_ID", "Customer_Order_Code", "Order_Time", "Pickup_Date", "Pickup_Time_Slot", "Customer_Name", "Customer_Phone", "Total_Amount", "Payment_Status", "Work_Status", "Order_Status", "Remarks", "Revision"];
@@ -4020,14 +4032,14 @@ function getOperatorReadSnapshot_() {
       if (coreOrderFields.indexOf(key) >= 0 || localizedFieldKeys.indexOf(key) >= 0) return;
       var value = row[key];
       if (value === "" || value === null || value === undefined) return;
-      if (value instanceof Date) value = operatorFormatDate_(value, "yyyy-MM-dd HH:mm");
+      if (value instanceof Date) value = operatorFormatDate_(value, "yyyyMMdd HH:mm:ss");
       extraDetails.push({ label: key, value: String(value) });
     });
     return {
       id: String(row.Customer_Order_Code || orderId),
       systemId: orderId,
-      orderTime: operatorFormatDate_(row.Order_Time, "yyyy-MM-dd HH:mm"),
-      pickupDate: operatorFormatDate_(row.Pickup_Date, "yyyy-MM-dd"),
+      orderTime: operatorFormatDate_(row.Order_Time, "yyyyMMdd HH:mm:ss"),
+      pickupDate: operatorFormatDate_(row.Pickup_Date, "yyyyMMdd"),
       pickupTime: String(row.Pickup_Time_Slot || ""),
       name: String(row.Customer_Name || ""),
       phone: operatorPhoneWithLeadingZero_(row.Customer_Phone),
@@ -4066,7 +4078,7 @@ function getOperatorReadSnapshot_() {
     if (row.Setting_Key) settingsMap[String(row.Setting_Key).trim()] = row.Setting_Value;
   });
   var statusValue = String(settingsMap.Store_Status || "OPEN").trim().toUpperCase();
-  var businessDays = String(settingsMap.Business_Days || "MON,TUE,WED,THU,FRI,SAT,SUN")
+  var businessDays = String(settingsMap.Business_Days === undefined || settingsMap.Business_Days === null ? "MON,TUE,WED,THU,FRI,SAT,SUN" : settingsMap.Business_Days)
     .toUpperCase().split(/[\s,，]+/).filter(function (day) { return !!day; });
 
   var pickupSlots = operatorReadRows_(ss, "Pickup_Slots").map(function (row) {
@@ -4075,14 +4087,14 @@ function getOperatorReadSnapshot_() {
     var endTime = operatorFormatTime_(row.End_Time);
     if (!startTime) return null;
     return {
-      date: operatorFormatDate_(row.Pickup_Date, "yyyy-MM-dd"),
+      date: operatorFormatDate_(row.Pickup_Date, "yyyyMMdd"),
       time: startTime + (endTime ? "–" + endTime : ""),
       enabled: row.Is_Enabled === true || ["TRUE", "1", "是", "開放"].indexOf(String(row.Is_Enabled).toUpperCase()) >= 0
     };
   }).filter(function (row) { return !!row; });
 
   var businessCalendar = operatorReadRows_(ss, "Business_Calendar").map(function (row) {
-    var date = operatorFormatDate_(row.Business_Date, "yyyy-MM-dd");
+    var date = operatorFormatDate_(row.Business_Date, "yyyyMMdd");
     if (!date || date === "營業日期") return null;
     var businessType = String(row.Business_Type || "").trim().toUpperCase();
     var closedValue = String(row.Is_Closed || "").trim().toUpperCase();
@@ -4102,7 +4114,7 @@ function getOperatorReadSnapshot_() {
 
   var settlements = {};
   operatorReadRows_(ss, "Daily_Settlements").forEach(function (row) {
-    var date = operatorFormatDate_(row.Settlement_Date, "yyyy-MM-dd");
+    var date = operatorFormatDate_(row.Settlement_Date, "yyyyMMdd");
     if (!date || date === "結算日期") return;
     var rawStatus = String(row.Status || "").trim();
     var settlementStatus = rawStatus.indexOf("已結算") >= 0 || rawStatus.toLowerCase() === "closed"
@@ -4115,21 +4127,21 @@ function getOperatorReadSnapshot_() {
       floatAmount: Number(row.Opening_Float) || 0,
       countedCash: Number(row.Counted_Cash) || 0,
       note: String(row.Notes || ""),
-      updatedAt: operatorFormatDate_(row.Closed_At || row.Created_At, "yyyy-MM-dd HH:mm"),
+      updatedAt: operatorFormatDate_(row.Closed_At || row.Created_At, "yyyyMMdd HH:mm:ss"),
       actor: String(row.Closed_By || row.Created_By || ""),
       inventoryCounts: {}
     };
   });
 
   operatorReadRows_(ss, "Settlement_Inventory_Counts").forEach(function (row) {
-    var date = operatorFormatDate_(row.Settlement_Date, "yyyy-MM-dd");
+    var date = operatorFormatDate_(row.Settlement_Date, "yyyyMMdd");
     var productId = String(row.Product_ID || "").trim();
     if (!date || date === "盤點日期" || !productId) return;
     if (!settlements[date]) settlements[date] = { date: date, status: "draft", inventoryCounts: {} };
     settlements[date].inventoryCounts[productId] = Number(row.Counted_Qty) || 0;
   });
 
-  return {
+  return operatorCompleteSnapshot_(ss, {
     orders: orders,
     products: products,
     settings: {
@@ -4146,7 +4158,7 @@ function getOperatorReadSnapshot_() {
     businessCalendar: businessCalendar,
     pickupSlots: pickupSlots,
     settlements: settlements
-  };
+  });
 }
 
 function operatorReadRows_(ss, sheetName) {
@@ -4158,7 +4170,7 @@ function operatorReadRows_(ss, sheetName) {
     var row = {};
     headers.forEach(function (header, index) { if (header) row[header] = cells[index]; });
     return row;
-  }).filter(function (row) { return Object.keys(row).some(function (key) { return row[key] !== "" && row[key] !== null; }); });
+  }).filter(function (row) { return Object.keys(row).some(function (key) { return row[key] !== "" && row[key] !== null && row[key] !== undefined; }); });
 }
 
 function operatorNormalizeWorkStatus_(value) {
@@ -4170,8 +4182,7 @@ function operatorNormalizeWorkStatus_(value) {
 }
 
 function operatorFormatDate_(value, pattern) {
-  if (value instanceof Date && !isNaN(value.getTime())) return Utilities.formatDate(value, "Asia/Taipei", pattern);
-  return String(value || "").trim();
+  return operatorFormattedDate_(value, pattern);
 }
 
 /** 一次性整理 Orders.Customer_Phone：以純文字存放並補回遺失的手機開頭 0。 */

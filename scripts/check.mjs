@@ -46,6 +46,7 @@ try {
   }
   await syntax(await readFile(path.join(root, 'operator-sw.js'), 'utf8'), 'operator-sw.js');
   const imported = await gas(path.join(root, 'gas/src'));
+  if (imported && (await readFile(path.join(root,'operator.html'),'utf8')) !== (await readFile(path.join(root,'gas/src/operator.html'),'utf8'))) throw new Error('Root and GAS operator pages must use the same field contract.');
   console.log(`JavaScript syntax and frontend integration inventory passed (${checked} scripts).`);
   console.log(imported ? 'Imported GAS source syntax checked; runtime behavior requires separate GAS tests.' : 'GAS source NOT imported; backend syntax and behavior remain unverified.');
 } finally {

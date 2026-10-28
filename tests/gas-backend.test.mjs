@@ -53,7 +53,7 @@ function cacheServices() {
 for (const file of variants) {
   test(`${file}: authorized staff identity is checked against audience and Staff_Accounts`, async () => {
     const mock = authServices();
-    const gas = await loadGas([file], mock.services);
+    const gas = await loadGas([file, 'OperatorData.js'], mock.services);
     const result = gas.verifyOperatorGoogleCredential_('synthetic-id-token');
     assert.equal(result.success, true);
     assert.equal(result.user.staffId, 'TEST001');
@@ -63,7 +63,7 @@ for (const file of variants) {
 
   test(`${file}: missing credential is rejected before any fetch`, async () => {
     const mock = authServices();
-    const gas = await loadGas([file], mock.services);
+    const gas = await loadGas([file, 'OperatorData.js'], mock.services);
     assert.throws(() => gas.verifyOperatorGoogleCredential_(''), /沒有收到 Google 登入憑證/);
     assert.equal(mock.count(), 0);
   });
@@ -79,20 +79,20 @@ for (const file of variants) {
   ]) {
     test(`${file}: rejects ${name}`, async () => {
       const mock = authServices(changes);
-      const gas = await loadGas([file], mock.services);
+      const gas = await loadGas([file, 'OperatorData.js'], mock.services);
       assert.throws(() => gas.verifyOperatorGoogleCredential_('synthetic-id-token'), /Google|帳號|Email/);
     });
   }
 
   test(`${file}: invalid JSONP callback is rejected before backend access`, async () => {
-    const gas = await loadGas([file], contentServices());
+    const gas = await loadGas([file, 'OperatorData.js'], contentServices());
     const result = gas.doGet({ parameter: { api: 'products', callback: 'alert(1)' } });
     assert.equal(result.text, 'Invalid callback');
     assert.equal(result.mime, 'text/plain');
   });
 
   test(`${file}: public product JSONP response uses the requested callback`, async () => {
-    const gas = await loadGas([file], contentServices());
+    const gas = await loadGas([file, 'OperatorData.js'], contentServices());
     gas.getProductsForFrontend = () => [{ Product_ID: 'TEST001', Price: 30 }];
     const result = gas.doGet({ parameter: { api: 'products', callback: 'testCallback' } });
     assert.equal(result.mime, 'application/javascript');
@@ -100,7 +100,7 @@ for (const file of variants) {
   });
 
   test(`${file}: operator response cache reconstructs a multi-chunk Unicode payload`, async () => {
-    const gas = await loadGas([file], cacheServices());
+    const gas = await loadGas([file, 'OperatorData.js'], cacheServices());
     const message = { type: 'TEST', text: '測試🍢'.repeat(8000) };
     gas.operatorStoreResponse_(state, message);
     const poll = (mode, part) => gas.operatorGetCachedResponse_({ state, mode, part });
@@ -115,13 +115,13 @@ for (const file of variants) {
 }
 
 test('newer order writer rejects staff editing details before touching a spreadsheet', async () => {
-  const gas = await loadGas(['Code.js']);
+  const gas = await loadGas(['Code.js', 'OperatorData.js']);
   assert.throws(() => gas.updateOperatorOrder_({ action: 'updateOrderDetails', orderId: 'TEST001' }, { role: '員工' }), /只有系統管理員或店長/);
 });
 
 test('newer order writer rejects stale revision and releases its lock without writes', async () => {
   let releases = 0;
-  const gas = await loadGas(['Code.js'], {
+  const gas = await loadGas(['Code.js', 'OperatorData.js'], {
     LockService: { getScriptLock: () => ({ waitLock: ms => assert.equal(ms, 20000), releaseLock: () => releases++ }) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: () => ({
       getLastRow: () => 2,
@@ -147,7 +147,7 @@ test('all GAS global function names have exactly one definition', async () => {
 });
 
 test('polling is compatible through both interfaces regardless of source load order', async () => {
-  for (const files of [['Code.js', 'ReceiptService.js'], ['ReceiptService.js', 'Code.js']]) {
+  for (const files of [['Code.js', 'ReceiptService.js', 'OperatorData.js'], ['OperatorData.js', 'ReceiptService.js', 'Code.js']]) {
     const gas = await loadGas(files, { ...cacheServices(), ...contentServices() });
     gas.operatorStoreResponse_(state, { text: 'synthetic response' });
     assert.equal(gas.operatorPollResponse_(state, 'meta').ready, true);

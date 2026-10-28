@@ -1,5 +1,7 @@
 # GAS 全域函式整併
 
+本文件記錄 `577b05b` 的整併階段；後續已新增 OperatorData.js 與營業設定等讀寫功能，最新結果見 [operator-field-audit.md](operator-field-audit.md)。
+
 原始快照提交：`3cbd212`。整併只修改 Git 開發分支，沒有連線更新正式 GAS、試算表或網站。
 
 ## 整併結果
