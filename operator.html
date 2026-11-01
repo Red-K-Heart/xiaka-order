@@ -417,6 +417,7 @@
       let calculatorOperator = null;
       let calculatorReplace = false;
       let calculatorExpression = '';
+      let calculatorSaveMessage = '';
       let settingsEditMode = false;
       let settlementExpenseDrafts = [];
       let settlementExpenseBaseAmount = 0;
@@ -513,7 +514,10 @@
       function money(amount) { return '$' + (Number(amount) || 0).toLocaleString('zh-TW'); }
       function role() { return roleSelect.value; }
       function canManageSchedule() { return role() !== '員工'; }
-      function canClose() { return role() !== '員工'; }
+      function canClose() {
+        const activeRole = signedInOperator?.role || roleSelect.value;
+        return ['系統管理員', '店長'].includes(activeRole);
+      }
       function makeAuthState() {
         const bytes = new Uint8Array(24); crypto.getRandomValues(bytes);
         return [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
@@ -707,7 +711,7 @@
       }
       function renderCalculator() {
         $('#calculatorExpression').textContent = calculatorExpression;
-        $('#calculatorValue').textContent = formatCalculatorNumber(calculatorValue);
+        $('#calculatorValue').textContent = calculatorSaveMessage || formatCalculatorNumber(calculatorValue);
         $('#saveOnsiteOrder').disabled = !signedInOperator || Number(calculatorValue) <= 0;
         $('#calculatorSaveNote').textContent = signedInOperator
           ? '儲存後會寫入正式試算表，並列在「已完成／全部」。'
@@ -723,6 +727,7 @@
         return Number(calculatorValue) || 0;
       }
       function handleCalculatorKey(key) {
+        calculatorSaveMessage = '';
         if (/^\d$/.test(key) || key === '00') {
           const digits = key;
           if (calculatorReplace) { calculatorValue = digits === '00' ? '0' : digits; calculatorReplace = false; }
@@ -767,6 +772,7 @@
         };
         if (offlineMode || !navigator.onLine) {
           data.orders.unshift(order); saveLocal();
+          calculatorSaveMessage = '訂單已暫存';
           renderOrders(); showToast('離線現場訂單已暫存，尚未同步；請連線後重新確認並補登');
           return;
         }
@@ -776,6 +782,7 @@
           showToast('現場訂單已寫入試算表');
         } catch (error) { showToast(error.message); return; }
         calculatorValue = '0'; calculatorOperand = null; calculatorOperator = null; calculatorReplace = false; calculatorExpression = '';
+        calculatorSaveMessage = '訂單已儲存';
         renderOrders();
       }
       function renderOrders() {
@@ -1460,7 +1467,7 @@
       $('#saveDraft').addEventListener('click', () => saveSettlement('draft'));
       $('#addExpenseRecord').addEventListener('click', () => {
         const record = data.settlements[$('#settlementDate').value || today];
-        if ((readOnlyData && !offlineMode) || record?.status === 'closed') return;
+        if (!canClose() || record?.status === 'closed') return;
         settlementExpenseDrafts.push({ category:'其他', name:'', amount:'', note:'' });
         renderExpenseLedger(record);
         scheduleDraftSave('settlement');
