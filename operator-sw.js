@@ -1,4 +1,4 @@
-const CACHE_NAME = 'xiaka-operator-shell-v41';
+const CACHE_NAME = 'xiaka-operator-shell-v42';
 const STATIC_HOSTS = new Set(['cdn.tailwindcss.com', 'cdnjs.cloudflare.com']);
 
 self.addEventListener('install', event => {
