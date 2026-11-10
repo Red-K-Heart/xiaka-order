@@ -201,6 +201,18 @@
         <div class="field"><label for="openingFloat">預備金</label><input class="input money" id="openingFloat" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>
       </div>
       <div class="section">
+        <div class="section-title"><h3>今日訂餐網頁開放時間</h3></div>
+        <div class="status-note" id="openingHoursSummary" aria-live="polite"></div>
+        <div class="field"><label for="openingOrderOpenTime">開放訂餐時間（24 小時制）</label><input class="input" id="openingOrderOpenTime" type="time" step="60" disabled></div>
+        <div class="field"><label for="openingOrderCloseTime">結束訂餐時間（24 小時制）</label><input class="input" id="openingOrderCloseTime" type="time" step="60" disabled></div>
+        <div class="action-row">
+          <button class="btn" id="editOpeningHours" type="button">修改今日訂餐時間</button>
+          <button class="btn primary" id="saveOpeningHours" type="button" hidden>儲存今日訂餐時間</button>
+          <button class="btn" id="cancelOpeningHours" type="button" hidden>取消修改</button>
+        </div>
+        <div class="status-note">僅調整所選開店日期的訂餐時間；每週營業規則、取餐時段及休息設定維持原設定。</div>
+      </div>
+      <div class="section">
         <div class="section-title"><h3>進貨盤點</h3><span class="muted">保留數量為庫存；已訂數量依未取消線上訂單統計</span></div>
         <p class="muted">進貨數量是今日新進的量；保留數量是目前庫存；已訂數量是目前線上訂餐的售出量。</p>
         <div id="openingInventoryList"></div>
@@ -379,6 +391,9 @@
       let draftSaveTimer = null;
       let openingDirty = false;
       let openingEditMode = false;
+      let openingHoursEditing = false;
+      let openingHoursSaving = false;
+      let openingHoursExpected = null;
       let settlementDirty = false;
       let testClockOverride = null;
       let ordersRefreshTimer = null;
@@ -1074,7 +1089,28 @@
         $('#saveSettings').hidden = !settingsEditMode;
         $('#saveSettings').disabled = !canEdit || !settingsEditMode;
       }
+      function actualTaipeiDay() {
+        const parts = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Taipei', year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(new Date());
+        const get = type => parts.find(part => part.type === type).value;
+        return `${get('year')}-${get('month')}-${get('day')}`;
+      }
+      function renderOpeningHours() {
+        const day = $('#openingDate').value || today;
+        const settings = getDaySettings(day);
+        const available = !!readOnlyData && !readOnlyData.loading && !offlineMode && !!signedInOperator && canClose() && day === actualTaipeiDay();
+        if (!available) openingHoursEditing = false;
+        if (!openingHoursEditing) {
+          $('#openingOrderOpenTime').value = settings.openTime || '';
+          $('#openingOrderCloseTime').value = settings.closeTime || '';
+        }
+        $('#openingHoursSummary').textContent = readOnlyData?.loading ? '訂餐時間載入中…' : `${day}｜訂餐時間 ${settings.openTime || '未設定'}–${settings.closeTime || '未設定'}${settings.closed ? '｜本日不接單（休息或全店停單）' : ''}${offlineMode ? '｜離線快照，無法修改' : ''}`;
+        ['openingOrderOpenTime','openingOrderCloseTime'].forEach(id => { $('#'+id).disabled = !available || !openingHoursEditing || openingHoursSaving; });
+        $('#editOpeningHours').hidden = openingHoursEditing;
+        $('#editOpeningHours').disabled = !available || openingHoursSaving;
+        ['saveOpeningHours','cancelOpeningHours'].forEach(id => { $('#'+id).hidden = !openingHoursEditing; $('#'+id).disabled = !available || openingHoursSaving; });
+      }
       function renderOpening() {
+        renderOpeningHours();
         const day = $('#openingDate').value || today;
         const record = data.openings[day];
         const completed = isOpeningCompleted(record);
@@ -1303,7 +1339,7 @@
       window.addEventListener('online', updateNetworkMode);
       window.addEventListener('pagehide', () => { if (openingDirty) persistOpeningDraft(); if (settlementDirty) persistSettlementDraft(); saveLocal(); });
       ['input','change'].forEach(type => {
-        $('#openingPanel').addEventListener(type, event => { if (event.target.matches('input,select,textarea')) scheduleDraftSave('opening'); });
+        $('#openingPanel').addEventListener(type, event => { if (event.target.matches('input,select,textarea') && !['openingOrderOpenTime','openingOrderCloseTime'].includes(event.target.id)) scheduleDraftSave('opening'); });
         $('#settlementPanel').addEventListener(type, event => { if (event.target.matches('input,select,textarea,[data-expense-field]')) scheduleDraftSave('settlement'); });
       });
       $$('.tab').forEach(tab => tab.addEventListener('click', () => {
@@ -1342,7 +1378,7 @@
         catch (error) { showToast(error.message); }
       });
       $('#openingDate').value = today; $('#settingDate').value = today; $('#settlementDate').value = today; $('#orderDate').value = '';
-      $('#openingDate').addEventListener('change', () => { openingEditMode = false; renderOpening(); });
+      $('#openingDate').addEventListener('change', () => { openingEditMode = false; openingHoursEditing = false; renderOpening(); });
       $('#settingDate').addEventListener('change', renderSettings);
       $('#businessDateOptions').addEventListener('click', event => {
         const button = event.target.closest('[data-business-date]'); if (!button) return;
@@ -1446,6 +1482,32 @@
         settings.stock.forEach((item,index) => { if (item.quantity !== oldStock[index].quantity) data.inventoryLog.unshift({ at: new Date().toISOString(), actor: role(), productId: item.id, name: item.name, before: oldStock[index].quantity, after: item.quantity, reason: reason || '未填寫（示意）' }); });
         saveLocal(); settingsEditMode = false; renderSettings(); showToast('示意營業設定已儲存在此瀏覽器');
       });
+      $('#editOpeningHours').addEventListener('click', () => {
+        if (!readOnlyData || readOnlyData.loading || offlineMode || !signedInOperator || !canClose()) return showToast('請先由店長或系統管理員登入並連線');
+        const day = $('#openingDate').value || today;
+        if (day !== actualTaipeiDay()) return showToast('此功能僅可修改今日訂餐時間');
+        const settings = getDaySettings(day);
+        openingHoursExpected = { date: day, openTime: settings.openTime, closeTime: settings.closeTime };
+        openingHoursEditing = true; renderOpeningHours();
+      });
+      $('#cancelOpeningHours').addEventListener('click', () => { openingHoursEditing = false; renderOpeningHours(); });
+      $('#saveOpeningHours').addEventListener('click', async () => {
+        if (!openingHoursEditing || openingHoursSaving || !signedInOperator || !canClose() || offlineMode || !readOnlyData || readOnlyData.loading) return;
+        const day = $('#openingDate').value || today;
+        if (day !== actualTaipeiDay() || day !== openingHoursExpected?.date) return showToast('日期已變更，請重新載入今日設定');
+        const openTime = $('#openingOrderOpenTime').value, closeTime = $('#openingOrderCloseTime').value;
+        if (![openTime,closeTime].every(value => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))) return showToast('請填寫完整的開放與結束時間');
+        if (openTime === closeTime) return showToast('開放與結束時間不可相同');
+        if (!confirm(`確認將 ${day} 訂餐時間改為 ${openTime}–${closeTime}？僅影響今日。`)) return;
+        openingHoursSaving = true; renderOpeningHours();
+        try {
+          await requestBusinessSettingsWrite({ todayOrderHours: { date: day, openTime, closeTime, expected: openingHoursExpected } });
+          openingHoursEditing = false;
+          await loadOperatorSnapshot();
+          showToast('今日訂餐時間已儲存，顧客頁重新讀取後生效');
+        } catch (error) { showToast(error.message); }
+        finally { openingHoursSaving = false; renderOpeningHours(); }
+      });
       $('#saveOpeningDraft').addEventListener('click', () => saveOpening(openingEditMode ? 'completed' : 'draft'));
       $('#editOpening').addEventListener('click', () => { openingEditMode = true; renderOpening(); });
       $('#cancelOpeningEdit').addEventListener('click', () => { openingEditMode = false; renderOpening(); });
@@ -1515,3 +1577,4 @@
   </script>
 </body>
 </html>
+
