@@ -1570,6 +1570,36 @@
         }
         if (record) { record.status = 'reopened'; record.actor = role(); record.updatedAt = new Date().toISOString(); saveLocal(); renderSettlement(); showToast('示意結算已重開'); }
       });
+
+      // 庫存每日配額：沿用既有 operatorWrite 身分驗證與後台樣式。
+      const inventoryV50 = document.createElement('section');
+      inventoryV50.id = 'inventoryV50';
+      inventoryV50.className = 'p-4 rounded-xl border border-amber-200 bg-white my-4';
+      inventoryV50.innerHTML = `<h3 class="font-bold mb-2">每日庫存與線上配額（V50）</h3>
+        <div class="flex flex-wrap gap-2 mb-2"><input id="inv50date" type="date" class="border rounded p-2"><input id="inv50id" placeholder="Product_ID" class="border rounded p-2"></div>
+        <div class="grid grid-cols-2 gap-2">
+        <label>昨日保留量<input id="inv50opening" type="number" min="0" step="any" class="border rounded p-2 w-full"></label>
+        <label>昨日訂貨量<input id="inv50planned" type="number" min="0" step="any" class="border rounded p-2 w-full"></label>
+        <label>今日實際進貨<input id="inv50actual" type="number" min="0" step="any" class="border rounded p-2 w-full"></label>
+        <label>今日訂貨量<input id="inv50purchase" type="number" min="0" step="any" class="border rounded p-2 w-full"></label>
+        <label>今日合格結存<input id="inv50closing" type="number" min="0" step="any" class="border rounded p-2 w-full"></label>
+        <label>人工線上配額<input id="inv50quota" type="number" min="0" step="any" class="border rounded p-2 w-full"></label></div>
+        <div class="flex gap-3 my-3"><label><input id="inv50confirmed" type="checkbox"> 已確認進貨</label><label><input id="inv50manual" type="checkbox"> 人工覆寫配額</label></div>
+        <button id="inv50save" class="bg-amber-700 text-white px-4 py-2 rounded">儲存庫存資料</button><p id="inv50message" class="text-sm mt-2"></p>`;
+      document.body.appendChild(inventoryV50);
+      document.getElementById('inv50date').value = actualTaipeiDay();
+      document.getElementById('inv50save').addEventListener('click',async()=>{
+        const v=id=>document.getElementById(id).value, checked=id=>document.getElementById(id).checked;
+        const fields={Opening_Qty:v('inv50opening'),Planned_Inbound_Qty:v('inv50planned'),Actual_Inbound_Qty:v('inv50actual'),Purchase_Order_Qty:v('inv50purchase'),Closing_Qty:v('inv50closing'),Receipt_Confirmed:checked('inv50confirmed'),Quota_Manual_Override:checked('inv50manual')};
+        if(checked('inv50manual'))fields.Online_Active_Quota=v('inv50quota');
+        const changes={date:v('inv50date'),productId:v('inv50id').trim(),...fields};
+        const msg=document.getElementById('inv50message');
+        if(!signedInOperator||offlineMode){msg.textContent='請先登入並連線';return;}
+        if(!changes.productId){msg.textContent='請輸入商品編號';return;}
+        try{const r=await requestOperatorWrite('updateInventoryDaily',null,changes);msg.textContent=r.warning||'已儲存；請重新整理查看最新配額';}
+        catch(e){msg.textContent='儲存失敗：'+e.message;}
+      });
+
       roleSelect.addEventListener('change', () => { renderOpening(); renderSettings(); renderSettlement(); showToast(`展示角色已切換為「${role()}」`); });
       if (!navigator.onLine && offlineSnapshotCache?.snapshot) activateOfflineCache();
       renderOrders(); renderOpening(); renderSettings(); renderSettlement();
@@ -1577,4 +1607,3 @@
   </script>
 </body>
 </html>
-
