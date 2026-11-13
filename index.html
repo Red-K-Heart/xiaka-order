@@ -1139,6 +1139,7 @@ function loadProductsFromGas(successCallback, errorCallback) {
 
         .map((item, index) => {
 
+          // V50: 後端回傳 Inventory_Managed / Online_Available_Qty，保留原版視覺與既有商品模型。
           const lowerKeys = {};
 
           Object.keys(item).forEach(k => {
@@ -1201,7 +1202,9 @@ function loadProductsFromGas(successCallback, errorCallback) {
             name: String(name).trim(),
             price,
             rating: String(rating ?? '').trim(),
-            description: String(description ?? '').trim()
+            description: String(description ?? '').trim(),
+            inventoryManaged: lowerKeys['inventory_managed'] === true,
+            availableQty: Number(lowerKeys['online_available_qty'] ?? 0)
           };
 
         })
@@ -1411,6 +1414,11 @@ function loadProductsFromGas(successCallback, errorCallback) {
 
       const updated =
         current + change;
+      const selectedProduct = rawProducts.find(p => p.id === id);
+      if (selectedProduct?.inventoryManaged && updated > selectedProduct.availableQty) {
+        alert(`此商品目前最多可訂 ${selectedProduct.availableQty} 份，請重新整理確認庫存。`);
+        return;
+      }
 
 
       if (updated <= 0) {
