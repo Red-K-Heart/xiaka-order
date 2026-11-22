@@ -36,6 +36,7 @@
     }
     * { box-sizing: border-box; }
     body { margin: 0; min-width: 320px; padding-bottom: 30px; background: var(--bg); font-size: 13px; }
+    body.offline-state { background: #55585d; }
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; }
     button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
@@ -445,6 +446,9 @@
       let toastTimer;
       let cancelArmed = new Set();
 
+      function setConnectionBackground(isOffline) {
+        document.body.classList.toggle('offline-state', !!isOffline);
+      }
       function saveLocal() {
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
         catch (error) { console.warn('[Operator] 本機暫存失敗：', error); }
@@ -470,6 +474,7 @@
         $('#googleSignIn').hidden = true; $('#authSignOut').hidden = false;
         readOnlyData = null;
         offlineMode = true;
+        setConnectionBackground(true);
         $('#connectionStatus').textContent = '離線暫存模式';
         $('#connectionNotice').textContent = '目前使用上次讀取的資料；本機草稿會自動保存，尚未同步至試算表。';
         $('#authUserStatus').textContent = `${signedInOperator?.name || '已載入離線資料'}・${signedInOperator?.role || '本機暫存'}・離線`; 
@@ -665,6 +670,7 @@
           persistRemoteSnapshot(response.data);
           saveLocal();
           offlineMode = false;
+          setConnectionBackground(false);
           $('#authUserStatus').textContent = `${signedInOperator.name || signedInOperator.email}・${signedInOperator.role}・已連線`;
           $('#connectionStatus').textContent = '正式試算表已連線・訂單每30秒更新';
         $('#connectionNotice').textContent = '訂單狀態可由作業頁更新；系統管理員與店長可修改營業規則。開店、結算與設定草稿會自動保存在本機，離線變更不會自動寫入試算表。';
@@ -1367,6 +1373,7 @@
       function updateNetworkMode() {
         if (!navigator.onLine) {
           offlineMode = true;
+          setConnectionBackground(true);
           if (openingDirty) persistOpeningDraft();
           if (settlementDirty) persistSettlementDraft();
           if (readOnlyData && !readOnlyData.loading) persistRemoteSnapshot(readOnlyData);
@@ -1379,6 +1386,7 @@
           renderOrders(); renderOpening(); renderSettings(); renderSettlement();
           return;
         }
+        setConnectionBackground(false);
         if (offlineMode) {
           $('#connectionStatus').textContent = '網路已恢復・本機草稿待處理';
           $('#connectionNotice').textContent = '網路已恢復；離線期間的本機草稿仍未同步至試算表，請登入並核對後再處理。';
@@ -1603,6 +1611,7 @@
         roleSelect.disabled = false; roleSelect.value = '店長';
         if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
         $('#authUserStatus').textContent = '已登出 Google'; $('#googleSignIn').hidden = false; $('#authSignOut').hidden = true;
+        setConnectionBackground(false);
         $('#connectionStatus').textContent = '示意模式・資料只存在這個瀏覽器';
         $('#connectionNotice').textContent = '尚未連接 Google 登入或試算表。此頁顯示的是本機示意資料。';
         settingsEditMode = false; renderOpening(); renderSettings(); renderSettlement();
@@ -1682,6 +1691,7 @@
       });
 
       roleSelect.addEventListener('change', () => { renderOpening(); renderSettings(); renderSettlement(); showToast(`展示角色已切換為「${role()}」`); });
+      setConnectionBackground(!navigator.onLine);
       if (!navigator.onLine && offlineSnapshotCache?.snapshot) activateOfflineCache();
       renderOrders(); renderOpening(); renderSettings(); renderSettlement();
     })();
