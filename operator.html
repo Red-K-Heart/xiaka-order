@@ -1139,7 +1139,7 @@
           ? `<div class="inventory-scroll"><div class="inventory-grid opening-inventory-grid"><div class="inventory-heading">品名</div><div class="inventory-heading">進貨數量</div><div class="inventory-heading">保留數量</div><div class="inventory-heading">已訂數量</div><div class="inventory-heading">上架狀態</div>${products.map(item => {
             const itemName = getSpreadsheetItemName(item);
             const listed = isProductListed(item);
-            const canChangeListing = canManageSchedule() && !!readOnlyData && !readOnlyData.loading && !offlineMode;
+            const canChangeListing = canClose() && !!readOnlyData && !readOnlyData.loading && !offlineMode;
             const row = inventory[item.id] || { incoming: record?.incomingInventory?.[item.id] };
             const ordered = getOrderedQuantity(day, item);
             return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(itemName)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-opening-incoming value="${row.incoming ?? ''}" aria-label="${escapeHtml(itemName)}進貨數量" ${locked ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? (Number(item.quantity) || 0)}" data-opening-reserved aria-label="${escapeHtml(itemName)}保留數量" ${locked ? 'disabled' : ''}></div><div class="inventory-readonly" data-opening-ordered>${ordered}</div><div class="inventory-status-cell"><span class="inventory-status-label ${listed ? 'is-listed' : 'is-unlisted'}">${listed ? '上架' : '下架'}</span><button class="btn inventory-status-toggle" type="button" data-product-status-toggle="${escapeHtml(item.id)}" ${canChangeListing ? '' : 'disabled'}>設為${listed ? '下架' : '上架'}</button></div>`;
@@ -1525,6 +1525,32 @@
         finally { openingHoursSaving = false; renderOpeningHours(); }
       });
       $('#saveOpeningDraft').addEventListener('click', () => saveOpening(openingEditMode ? 'completed' : 'draft'));
+      $('#openingInventoryList').addEventListener('click', async event => {
+        const button = event.target.closest('[data-product-status-toggle]');
+        if (!button) return;
+        if (!canClose()) return showToast('只有系統管理員或店長可以修改商品上架狀態');
+        if (!readOnlyData || readOnlyData.loading || offlineMode) return showToast('請在已連線狀態下修改商品上架狀態');
+        const productId = button.dataset.productStatusToggle;
+        const product = (readOnlyData.products || []).find(item => String(item.id) === String(productId));
+        if (!product) return showToast('找不到商品資料，請重新載入');
+        const wasListed = isProductListed(product), nextStatus = wasListed ? '下架' : '上架';
+        const itemName = getSpreadsheetItemName(product);
+        button.disabled = true;
+        button.textContent = '儲存中…';
+        showToast(`正在將「${itemName}」設為${nextStatus}…`);
+        try {
+          await requestOperatorWrite('updateProductStatus', null, {
+            productId,
+            status: nextStatus,
+            expectedStatus: String(product.listingStatus ?? '')
+          });
+          await loadOperatorSnapshot();
+          showToast(`「${itemName}」已${nextStatus}並寫入試算表`);
+        } catch (error) {
+          showToast(error.message);
+          renderOpening();
+        }
+      });
       $('#editOpening').addEventListener('click', () => { openingEditMode = true; renderOpening(); });
       $('#cancelOpeningEdit').addEventListener('click', () => { openingEditMode = false; renderOpening(); });
       $('#completeOpening').addEventListener('click', () => {
