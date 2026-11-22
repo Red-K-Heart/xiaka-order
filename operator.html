@@ -1242,16 +1242,40 @@
           if (!signedInOperator || !operatorCredential) return showToast('請先登入作業帳號');
           $('#saveOpeningDraft').disabled = true; $('#completeOpening').disabled = true;
           requestOperatorWrite('saveOpening', null, changes).then(async () => {
-            // 寫入成功後清掉舊離線草稿標記，避免下次讀取時用本機草稿蓋掉已完成狀態。
+            const productStatuses = changes.productStatuses || {};
+            if (Object.keys(productStatuses).length) {
+              // 開店主檔寫入成功後，重新讀取 Products.Status 並逐項核對。
+              await loadOperatorSnapshot();
+              const products = readOnlyData?.products || [];
+              for (const [productId, change] of Object.entries(productStatuses)) {
+                const product = products.find(item => String(item.id) === String(productId));
+                if (!product) throw new Error(`開店資料已儲存，但找不到商品 ${productId}，上下架狀態尚未確認。`);
+                const currentStatus = String(product.listingStatus ?? '').trim();
+                const desiredStatus = String(change.status || '').trim();
+                if (currentStatus === desiredStatus) continue;
+                const expectedStatus = String(change.expectedStatus ?? '').trim();
+                if (currentStatus !== expectedStatus) throw new Error(`開店資料已儲存，但商品「${getSpreadsheetItemName(product)}」狀態已被其他人修改；請重新載入後確認。`);
+                await requestOperatorWrite('updateProductStatus', null, { productId, status: desiredStatus, expectedStatus: currentStatus });
+              }
+              await loadOperatorSnapshot();
+              for (const [productId, change] of Object.entries(productStatuses)) {
+                const product = (readOnlyData?.products || []).find(item => String(item.id) === String(productId));
+                if (String(product?.listingStatus ?? '').trim() !== String(change.status || '').trim()) {
+                  throw new Error(`開店資料已儲存，但商品 ${productId} 的上下架狀態未確認成功；請重新整理後再試。`);
+                }
+              }
+            } else {
+              await loadOperatorSnapshot();
+            }
+            // 狀態核對完成後才清除本機待儲存標記。
             if (data.openings[day]) {
               const savedOpening = { ...data.openings[day], pendingLocal: false };
               delete savedOpening.pendingProductStatuses;
               data.openings[day] = savedOpening;
               saveLocal();
             }
-            await loadOperatorSnapshot();
             openingEditMode = false;
-            showToast(editingCompleted ? '開店資料修改已寫入試算表' : status === 'completed' ? '開店作業已寫入試算表' : '開店草稿已寫入試算表');
+            showToast(editingCompleted ? '開店資料與商品上下架狀態已寫入試算表' : status === 'completed' ? '開店作業與商品上下架狀態已寫入試算表' : '開店草稿與商品上下架狀態已寫入試算表');
           }).catch(error => showToast(error.message)).finally(renderOpening);
           return;
         }
