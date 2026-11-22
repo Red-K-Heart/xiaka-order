@@ -1109,6 +1109,9 @@
         $('#editOpeningHours').disabled = !available || openingHoursSaving;
         ['saveOpeningHours','cancelOpeningHours'].forEach(id => { $('#'+id).hidden = !openingHoursEditing; $('#'+id).disabled = !available || openingHoursSaving; });
       }
+      function getSpreadsheetItemName(item) {
+        return String(item?.itemName || item?.Item_Name || item?.name || item?.id || '').trim();
+      }
       function renderOpening() {
         renderOpeningHours();
         const day = $('#openingDate').value || today;
@@ -1125,9 +1128,10 @@
         const inventory = record?.inventory || {};
         $('#openingInventoryList').innerHTML = products.length
           ? `<div class="inventory-scroll"><div class="inventory-grid opening-inventory-grid"><div class="inventory-heading">品名</div><div class="inventory-heading">進貨數量</div><div class="inventory-heading">保留數量</div><div class="inventory-heading">已訂數量</div>${products.map(item => {
+            const itemName = getSpreadsheetItemName(item);
             const row = inventory[item.id] || { incoming: record?.incomingInventory?.[item.id] };
             const ordered = getOrderedQuantity(day, item);
-            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(item.name)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-opening-incoming value="${row.incoming ?? ''}" aria-label="${escapeHtml(item.name)}進貨數量" ${locked ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? (Number(item.quantity) || 0)}" data-opening-reserved aria-label="${escapeHtml(item.name)}保留數量" ${locked ? 'disabled' : ''}></div><div class="inventory-readonly" data-opening-ordered>${ordered}</div>`;
+            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(itemName)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-opening-incoming value="${row.incoming ?? ''}" aria-label="${escapeHtml(itemName)}進貨數量" ${locked ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? (Number(item.quantity) || 0)}" data-opening-reserved aria-label="${escapeHtml(itemName)}保留數量" ${locked ? 'disabled' : ''}></div><div class="inventory-readonly" data-opening-ordered>${ordered}</div>`;
           }).join('')}</div></div>`
           : '<div class="empty">目前沒有商品資料</div>';
         ['openingFloat','openingWeather','openingNote'].forEach(id => { $('#'+id).disabled = locked; });
@@ -1276,13 +1280,14 @@
         const inventory = record?.inventory || {};
         $('#settlementInventoryList').innerHTML = settings.stock.length
           ? `<div class="inventory-scroll"><div class="inventory-grid settlement-inventory-grid"><div class="inventory-heading">品名</div><div class="inventory-heading">賣出數量</div><div class="inventory-heading">報廢數量</div><div class="inventory-heading">保留數量</div><div class="inventory-heading">下單備貨</div>${settings.stock.map(item => {
+            const itemName = getSpreadsheetItemName(item);
             const row = inventory[item.id] || {};
             const autoCounts = readOnlyData?.inventoryByDate?.[day]?.[item.id] || {};
             const soldQty = autoCounts.sold ?? row.sold ?? 0;
             const wasteQty = autoCounts.waste ?? row.waste ?? 0;
             const disabled = !canClose() || record?.status === 'closed' ? 'disabled' : '';
             const formulaDisabled = (!!readOnlyData && !offlineMode) || disabled;
-            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(item.name)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-sold value="${soldQty}" aria-label="${escapeHtml(item.name)}賣出數量" ${formulaDisabled ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-waste value="${wasteQty}" aria-label="${escapeHtml(item.name)}報廢數量" ${formulaDisabled ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? inventoryCounts[item.id] ?? (Number(item.quantity) || 0)}" data-settlement-reserved aria-label="${escapeHtml(item.name)}保留數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-order value="${row.orderPrep ?? ''}" aria-label="${escapeHtml(item.name)}下單備貨" ${disabled}></div>`;
+            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(itemName)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-sold value="${soldQty}" aria-label="${escapeHtml(itemName)}賣出數量" ${formulaDisabled ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-waste value="${wasteQty}" aria-label="${escapeHtml(itemName)}報廢數量" ${formulaDisabled ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? inventoryCounts[item.id] ?? (Number(item.quantity) || 0)}" data-settlement-reserved aria-label="${escapeHtml(itemName)}保留數量" ${disabled}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-settlement-order value="${row.orderPrep ?? ''}" aria-label="${escapeHtml(itemName)}下單備貨" ${disabled}></div>`;
           }).join('')}</div></div>`
           : '<div class="empty">此日期沒有商品資料</div>';
         if (record) {
