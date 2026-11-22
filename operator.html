@@ -134,12 +134,17 @@
     .count-input { width: 104px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; text-align: center; background: var(--surface); }
     .inventory-scroll { width: 100%; min-width: 0; overflow-x: hidden; }
     .inventory-grid { display: grid; align-items: center; gap: 8px; min-width: 0; width: 100%; }
-    .opening-inventory-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    .opening-inventory-grid { grid-template-columns: minmax(0,1.3fr) repeat(3,minmax(0,.8fr)) minmax(0,1fr); }
     .settlement-inventory-grid { grid-template-columns: repeat(5, minmax(0,1fr)); }
     .inventory-heading { min-width: 0; padding: 8px 2px; color: var(--brand); font-size: 13px; font-weight: 750; text-align: center; overflow-wrap: anywhere; }
     .inventory-product { min-width: 0; padding: 9px 2px; border-top: 1px solid var(--line); font-size: clamp(15px, 4vw, 18px); line-height: 1.25; font-weight: 700; overflow-wrap: anywhere; }
     .inventory-value { width: 100%; min-width: 0; min-height: 42px; padding: 6px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--surface-soft); text-align: center; }
     .inventory-readonly { color: var(--muted); font-size: 13px; text-align: center; }
+    .inventory-status-cell { display: grid; justify-items: center; gap: 5px; min-width: 0; }
+    .inventory-status-label { font-size: 13px; font-weight: 700; }
+    .inventory-status-label.is-listed { color: var(--good); }
+    .inventory-status-label.is-unlisted { color: var(--danger); }
+    .inventory-status-toggle { min-height: 36px; padding: 6px 8px; font-size: 13px; white-space: normal; }
     .stock-name { font-weight: 650; }
     .stock-sub { margin-top: 2px; color: var(--muted); font-size: 13px; }
     .qty-input { width: 94px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; text-align: center; background: var(--surface); }
@@ -1112,6 +1117,10 @@
       function getSpreadsheetItemName(item) {
         return String(item?.itemName || item?.Item_Name || item?.name || item?.id || '').trim();
       }
+      function isProductListed(item) {
+        const status = String(item?.listingStatus ?? item?.Status ?? '').trim().toUpperCase();
+        return !status || ['上架', 'ACTIVE', '營業中', 'TRUE', '1'].includes(status);
+      }
       function renderOpening() {
         renderOpeningHours();
         const day = $('#openingDate').value || today;
@@ -1127,11 +1136,13 @@
         const products = getDaySettings(day).stock;
         const inventory = record?.inventory || {};
         $('#openingInventoryList').innerHTML = products.length
-          ? `<div class="inventory-scroll"><div class="inventory-grid opening-inventory-grid"><div class="inventory-heading">品名</div><div class="inventory-heading">進貨數量</div><div class="inventory-heading">保留數量</div><div class="inventory-heading">已訂數量</div>${products.map(item => {
+          ? `<div class="inventory-scroll"><div class="inventory-grid opening-inventory-grid"><div class="inventory-heading">品名</div><div class="inventory-heading">進貨數量</div><div class="inventory-heading">保留數量</div><div class="inventory-heading">已訂數量</div><div class="inventory-heading">上架狀態</div>${products.map(item => {
             const itemName = getSpreadsheetItemName(item);
+            const listed = isProductListed(item);
+            const canChangeListing = canManageSchedule() && !!readOnlyData && !readOnlyData.loading && !offlineMode;
             const row = inventory[item.id] || { incoming: record?.incomingInventory?.[item.id] };
             const ordered = getOrderedQuantity(day, item);
-            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(itemName)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-opening-incoming value="${row.incoming ?? ''}" aria-label="${escapeHtml(itemName)}進貨數量" ${locked ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? (Number(item.quantity) || 0)}" data-opening-reserved aria-label="${escapeHtml(itemName)}保留數量" ${locked ? 'disabled' : ''}></div><div class="inventory-readonly" data-opening-ordered>${ordered}</div>`;
+            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(itemName)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-opening-incoming value="${row.incoming ?? ''}" aria-label="${escapeHtml(itemName)}進貨數量" ${locked ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? (Number(item.quantity) || 0)}" data-opening-reserved aria-label="${escapeHtml(itemName)}保留數量" ${locked ? 'disabled' : ''}></div><div class="inventory-readonly" data-opening-ordered>${ordered}</div><div class="inventory-status-cell"><span class="inventory-status-label ${listed ? 'is-listed' : 'is-unlisted'}">${listed ? '上架' : '下架'}</span><button class="btn inventory-status-toggle" type="button" data-product-status-toggle="${escapeHtml(item.id)}" ${canChangeListing ? '' : 'disabled'}>設為${listed ? '下架' : '上架'}</button></div>`;
           }).join('')}</div></div>`
           : '<div class="empty">目前沒有商品資料</div>';
         ['openingFloat','openingWeather','openingNote'].forEach(id => { $('#'+id).disabled = locked; });
