@@ -134,12 +134,18 @@
     .count-input { width: 104px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; text-align: center; background: var(--surface); }
     .inventory-scroll { width: 100%; min-width: 0; overflow-x: hidden; }
     .inventory-grid { display: grid; align-items: center; gap: 8px; min-width: 0; width: 100%; }
-    .opening-inventory-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    .opening-inventory-grid { grid-template-columns: minmax(0,1.3fr) repeat(3,minmax(0,.8fr)) minmax(0,1fr); }
     .settlement-inventory-grid { grid-template-columns: repeat(5, minmax(0,1fr)); }
     .inventory-heading { min-width: 0; padding: 8px 2px; color: var(--brand); font-size: 13px; font-weight: 750; text-align: center; overflow-wrap: anywhere; }
     .inventory-product { min-width: 0; padding: 9px 2px; border-top: 1px solid var(--line); font-size: clamp(15px, 4vw, 18px); line-height: 1.25; font-weight: 700; overflow-wrap: anywhere; }
     .inventory-value { width: 100%; min-width: 0; min-height: 42px; padding: 6px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--surface-soft); text-align: center; }
     .inventory-readonly { color: var(--muted); font-size: 13px; text-align: center; }
+    .inventory-status-cell { display: grid; justify-items: center; gap: 5px; min-width: 0; }
+    .inventory-status-label { font-size: 13px; font-weight: 700; }
+    .inventory-status-label.is-listed { color: var(--good); }
+    .inventory-status-label.is-unlisted { color: var(--danger); }
+    .inventory-status-pending { color: var(--warn); font-size: 12px; font-weight: 600; }
+    .inventory-status-toggle { min-height: 36px; padding: 6px 8px; font-size: 13px; white-space: normal; }
     .stock-name { font-weight: 650; }
     .stock-sub { margin-top: 2px; color: var(--muted); font-size: 13px; }
     .qty-input { width: 94px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; text-align: center; background: var(--surface); }
@@ -655,7 +661,7 @@
           data.cachedProducts = Array.isArray(response.data.products) ? response.data.products : [];
           data.cachedBusinessCalendar = Array.isArray(response.data.businessCalendar) ? response.data.businessCalendar : [];
           data.settlements = { ...(response.data.settlements || {}), ...Object.fromEntries(Object.entries(localSettlements).filter(([, item]) => item?.pendingLocal)) };
-          data.openings = { ...(response.data.openings || {}), ...Object.fromEntries(Object.entries(localOpenings).filter(([, item]) => item?.pendingLocal)) };
+          data.openings = { ...(response.data.openings || {}), ...Object.fromEntries(Object.entries(localOpenings).filter(([, item]) => item?.pendingLocal || Object.keys(item?.pendingProductStatuses || {}).length > 0)) };
           persistRemoteSnapshot(response.data);
           saveLocal();
           offlineMode = false;
@@ -1112,6 +1118,13 @@
       function getSpreadsheetItemName(item) {
         return String(item?.itemName || item?.Item_Name || item?.name || item?.id || '').trim();
       }
+      function isProductListed(item) {
+        return isProductStatusListed(item?.listingStatus ?? item?.Status ?? '');
+      }
+      function isProductStatusListed(value) {
+        const status = String(value ?? '').trim().toUpperCase();
+        return !status || ['上架', 'ACTIVE', '營業中', 'TRUE', '1'].includes(status);
+      }
       function renderOpening() {
         renderOpeningHours();
         const day = $('#openingDate').value || today;
@@ -1127,11 +1140,15 @@
         const products = getDaySettings(day).stock;
         const inventory = record?.inventory || {};
         $('#openingInventoryList').innerHTML = products.length
-          ? `<div class="inventory-scroll"><div class="inventory-grid opening-inventory-grid"><div class="inventory-heading">品名</div><div class="inventory-heading">進貨數量</div><div class="inventory-heading">保留數量</div><div class="inventory-heading">已訂數量</div>${products.map(item => {
+          ? `<div class="inventory-scroll"><div class="inventory-grid opening-inventory-grid"><div class="inventory-heading">品名</div><div class="inventory-heading">進貨數量</div><div class="inventory-heading">保留數量</div><div class="inventory-heading">已訂數量</div><div class="inventory-heading">上架狀態</div>${products.map(item => {
             const itemName = getSpreadsheetItemName(item);
+            const stagedStatus = record?.pendingProductStatuses?.[item.id];
+            const listed = stagedStatus ? isProductStatusListed(stagedStatus.status) : isProductListed(item);
+            const statusPending = !!stagedStatus;
+            const canChangeListing = !locked && !!(readOnlyData?.products || data.cachedProducts)?.length;
             const row = inventory[item.id] || { incoming: record?.incomingInventory?.[item.id] };
             const ordered = getOrderedQuantity(day, item);
-            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(itemName)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-opening-incoming value="${row.incoming ?? ''}" aria-label="${escapeHtml(itemName)}進貨數量" ${locked ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? (Number(item.quantity) || 0)}" data-opening-reserved aria-label="${escapeHtml(itemName)}保留數量" ${locked ? 'disabled' : ''}></div><div class="inventory-readonly" data-opening-ordered>${ordered}</div>`;
+            return `<div class="inventory-product" data-product-id="${escapeHtml(item.id)}">${escapeHtml(itemName)}</div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-opening-incoming value="${row.incoming ?? ''}" aria-label="${escapeHtml(itemName)}進貨數量" ${locked ? 'disabled' : ''}></div><div><input class="inventory-value" type="number" min="0" step="1" inputmode="numeric" value="${row.reserved ?? (Number(item.quantity) || 0)}" data-opening-reserved aria-label="${escapeHtml(itemName)}保留數量" ${locked ? 'disabled' : ''}></div><div class="inventory-readonly" data-opening-ordered>${ordered}</div><div class="inventory-status-cell"><span class="inventory-status-label ${listed ? 'is-listed' : 'is-unlisted'}">${listed ? '上架' : '下架'}</span>${statusPending ? '<span class="inventory-status-pending">待儲存</span>' : ''}<button class="btn inventory-status-toggle" type="button" data-product-status-toggle="${escapeHtml(item.id)}" ${canChangeListing ? '' : 'disabled'}>設為${listed ? '下架' : '上架'}</button></div>`;
           }).join('')}</div></div>`
           : '<div class="empty">目前沒有商品資料</div>';
         ['openingFloat','openingWeather','openingNote'].forEach(id => { $('#'+id).disabled = locked; });
@@ -1196,6 +1213,7 @@
         const old = data.openings[day] || {};
         data.openings[day] = { ...old, date: day, status: old.status || 'draft', floatAmount: Number($('#openingFloat').value) || 0,
           inventory: collectOpeningInventory(), weather: $('#openingWeather').value, note: $('#openingNote').value.trim(),
+          pendingProductStatuses: old.pendingProductStatuses || {},
           actor: role(), updatedAt: new Date().toISOString(), pendingLocal: !!offlineMode };
         saveLocal(); openingDirty = false;
       }
@@ -1219,14 +1237,16 @@
         if (completed && !editingCompleted) return showToast('此日開店資料已完成，請先選擇「修改開店資料」');
         if (editingCompleted) status = 'completed';
         const inventory = collectOpeningInventory();
-        const changes = { date: day, status, revision: Number(old.revision) || 0, allowCompletedEdit: editingCompleted, floatAmount: Number($('#openingFloat').value) || 0, inventory, weather: $('#openingWeather').value, note: $('#openingNote').value.trim() };
+        const changes = { date: day, status, revision: Number(old.revision) || 0, allowCompletedEdit: editingCompleted, floatAmount: Number($('#openingFloat').value) || 0, inventory, productStatuses: old.pendingProductStatuses || {}, weather: $('#openingWeather').value, note: $('#openingNote').value.trim() };
         if (readOnlyData && !offlineMode) {
           if (!signedInOperator || !operatorCredential) return showToast('請先登入作業帳號');
           $('#saveOpeningDraft').disabled = true; $('#completeOpening').disabled = true;
           requestOperatorWrite('saveOpening', null, changes).then(async () => {
             // 寫入成功後清掉舊離線草稿標記，避免下次讀取時用本機草稿蓋掉已完成狀態。
             if (data.openings[day]) {
-              data.openings[day] = { ...data.openings[day], pendingLocal: false };
+              const savedOpening = { ...data.openings[day], pendingLocal: false };
+              delete savedOpening.pendingProductStatuses;
+              data.openings[day] = savedOpening;
               saveLocal();
             }
             await loadOperatorSnapshot();
@@ -1237,7 +1257,7 @@
         }
         data.openings[day] = {
           ...old, date: day, status, floatAmount: Number($('#openingFloat').value) || 0,
-          inventory, weather: $('#openingWeather').value, note: $('#openingNote').value.trim(),
+          inventory, productStatuses: old.pendingProductStatuses || {}, weather: $('#openingWeather').value, note: $('#openingNote').value.trim(),
           actor: role(), updatedAt: new Date().toISOString(), pendingLocal: !!offlineMode
         };
         if (editingCompleted) openingEditMode = false;
@@ -1514,7 +1534,39 @@
         finally { openingHoursSaving = false; renderOpeningHours(); }
       });
       $('#saveOpeningDraft').addEventListener('click', () => saveOpening(openingEditMode ? 'completed' : 'draft'));
-      $('#editOpening').addEventListener('click', () => { openingEditMode = true; renderOpening(); });
+      $('#openingInventoryList').addEventListener('click', async event => {
+        const button = event.target.closest('[data-product-status-toggle]');
+        if (!button) return;
+        if (!canClose()) return showToast('只有系統管理員或店長可以修改商品上架狀態');
+        const productId = button.dataset.productStatusToggle;
+        const product = (readOnlyData?.products || data.cachedProducts || []).find(item => String(item.id) === String(productId));
+        if (!product) return showToast('找不到商品資料，請重新載入');
+        const day = $('#openingDate').value || today;
+        const old = data.openings[day] || { date: day, status: 'draft' };
+        if (isOpeningCompleted(old) && !openingEditMode) return showToast('此日開店資料已完成，請先按「修改開店資料」');
+        const stagedStatuses = { ...(old.pendingProductStatuses || {}) };
+        const stagedStatus = stagedStatuses[productId];
+        const wasListed = stagedStatus ? isProductStatusListed(stagedStatus.status) : isProductListed(product);
+        const nextStatus = wasListed ? '下架' : '上架';
+        const itemName = getSpreadsheetItemName(product);
+        if (isProductStatusListed(nextStatus) === isProductListed(product)) delete stagedStatuses[productId];
+        else stagedStatuses[productId] = { status: nextStatus, expectedStatus: String(stagedStatus?.expectedStatus ?? product.listingStatus ?? '') };
+        data.openings[day] = { ...old, date: day, status: old.status || 'draft', pendingProductStatuses: stagedStatuses, pendingLocal: !!offlineMode, updatedAt: new Date().toISOString() };
+        saveLocal(); renderOpening();
+        showToast(offlineMode ? `「${itemName}」已暫存為${nextStatus}；目前離線，按儲存只會保存於本機` : `「${itemName}」已暫存為${nextStatus}，請按儲存草稿或完成開店送出`);
+      });
+      $('#editOpening').addEventListener('click', async () => {
+        const button = $('#editOpening');
+        const day = $('#openingDate').value || today;
+        button.disabled = true;
+        try {
+          // 重新讀取 Products.Status，確保進入完成開店的編輯模式時使用最新上下架狀態。
+          if (signedInOperator && !offlineMode) await loadOperatorSnapshot();
+        } finally {
+          if (($('#openingDate').value || today) === day) openingEditMode = true;
+          renderOpening();
+        }
+      });
       $('#cancelOpeningEdit').addEventListener('click', () => { openingEditMode = false; renderOpening(); });
       $('#completeOpening').addEventListener('click', () => {
         if (confirm(`確認完成 ${$('#openingDate').value || today} 的開店作業？完成後欄位會鎖定，可再按「修改開店資料」調整。`)) saveOpening('completed');
